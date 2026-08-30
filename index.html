@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Διατροφικό Ημερολόγιο</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:ital,wght@0,400;0,600;0,700;1,400&family=Noto+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-name">Διατροφικό Ημερολόγιο</span>
+    <span class="brand-tagline">Δελτίο Καταγραφής Θρεπτικής Αξίας</span>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button class="tab-btn active" data-tab="day">Ημέρα</button>
+    <button class="tab-btn" data-tab="foods">Τρόφιμα</button>
+    <button class="tab-btn" data-tab="history">Ιστορικό</button>
+    <button class="tab-btn" data-tab="goals">Στόχοι</button>
+  </nav>
+</header>
+
+<main class="container">
+
+  <!-- ================= DAY VIEW ================= -->
+  <section id="view-day" class="view active">
+
+    <div class="day-header card">
+      <label for="datePicker">Ημερομηνία</label>
+      <div class="date-row">
+        <button id="prevDay" class="icon-btn" title="Προηγούμενη ημέρα">‹</button>
+        <input type="date" id="datePicker">
+        <button id="nextDay" class="icon-btn" title="Επόμενη ημέρα">›</button>
+        <button id="todayBtn" class="link-btn">Σήμερα</button>
+      </div>
+    </div>
+
+    <div class="summary-grid">
+      <div class="card summary-card calories-card">
+        <div class="summary-title">Θερμίδες</div>
+        <div class="summary-value"><span id="calSum">0</span> / <span id="calGoal">0</span> kcal</div>
+        <div class="progress-track"><div id="calBar" class="progress-fill cal"></div></div>
+        <div class="summary-sub" id="calRemaining">—</div>
+      </div>
+
+      <div class="card summary-card">
+        <div class="macro-row">
+          <div class="macro-item">
+            <div class="macro-label">Πρωτεΐνη</div>
+            <div class="macro-value"><span id="proSum">0</span>/<span id="proGoal">0</span>g</div>
+            <div class="progress-track small"><div id="proBar" class="progress-fill pro"></div></div>
+          </div>
+          <div class="macro-item">
+            <div class="macro-label">Υδατάνθρακες</div>
+            <div class="macro-value"><span id="carbSum">0</span>/<span id="carbGoal">0</span>g</div>
+            <div class="progress-track small"><div id="carbBar" class="progress-fill carb"></div></div>
+          </div>
+          <div class="macro-item">
+            <div class="macro-label">Λίπος</div>
+            <div class="macro-value"><span id="fatSum">0</span>/<span id="fatGoal">0</span>g</div>
+            <div class="progress-track small"><div id="fatBar" class="progress-fill fat"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card ai-card">
+      <div class="section-title-row">
+        <h2>Πες μου τι έφαγες</h2>
+      </div>
+      <p class="hint">Γράψε ελεύθερα τι έφαγες (π.χ. «2 αυγά τηγανητά και μια φέτα ψωμί») και το AI θα υπολογίσει θερμίδες και μακροθρεπτικά.</p>
+
+      <form id="aiForm" class="ai-form">
+        <textarea id="aiDescription" rows="2" placeholder="π.χ. Μια μερίδα κοτόπουλο σουβλάκι με πίτα και τζατζίκι" required></textarea>
+        <button type="submit" id="aiEstimateBtn" class="btn primary">Υπολόγισε με AI</button>
+      </form>
+
+      <div id="aiLoading" class="ai-loading" hidden>
+        <span class="spinner"></span> Υπολογίζω...
+      </div>
+
+      <div id="aiError" class="ai-error" hidden></div>
+
+      <div id="aiResult" class="ai-result" hidden>
+        <div class="ai-result-header">
+          <span class="ai-result-title">Εκτίμηση AI</span>
+          <span class="ai-result-hint">Μπορείς να διορθώσεις τις τιμές πριν την προσθήκη</span>
+        </div>
+        <input type="text" id="aiResultName" class="ai-result-name" placeholder="Όνομα γεύματος">
+        <div class="entry-form ai-result-fields">
+          <input type="number" id="aiResultCal" placeholder="Θερμίδες" min="0" step="1">
+          <input type="number" id="aiResultPro" placeholder="Πρωτεΐνη (g)" min="0" step="0.1">
+          <input type="number" id="aiResultCarb" placeholder="Υδατ. (g)" min="0" step="0.1">
+          <input type="number" id="aiResultFat" placeholder="Λίπος (g)" min="0" step="0.1">
+        </div>
+        <p id="aiResultNote" class="ai-result-note" hidden></p>
+        <div class="ai-result-actions">
+          <button type="button" id="aiConfirmBtn" class="btn primary">Προσθήκη στην ημέρα</button>
+          <button type="button" id="aiDiscardBtn" class="btn secondary">Άκυρο</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title-row">
+        <h2>Ή πρόσθεσε γρήγορα</h2>
+      </div>
+
+      <div class="quick-add-row">
+        <select id="quickAddSelect">
+          <option value="">— Επιλογή από τα τρόφιμά μου —</option>
+        </select>
+        <input type="number" id="quickAddQty" min="0.1" step="0.1" value="1" title="Μερίδες">
+        <button id="quickAddBtn" class="btn primary">Προσθήκη</button>
+      </div>
+
+      <details class="manual-entry">
+        <summary>Ή καταχώρησε χειροκίνητα ένα τρόφιμο</summary>
+        <form id="manualForm" class="entry-form">
+          <input type="text" id="manualName" placeholder="Όνομα τροφίμου" required>
+          <input type="number" id="manualCal" placeholder="Θερμίδες" min="0" step="1" required>
+          <input type="number" id="manualPro" placeholder="Πρωτεΐνη (g)" min="0" step="0.1">
+          <input type="number" id="manualCarb" placeholder="Υδατ. (g)" min="0" step="0.1">
+          <input type="number" id="manualFat" placeholder="Λίπος (g)" min="0" step="0.1">
+          <button type="submit" class="btn secondary">Προσθήκη γεύματος</button>
+        </form>
+      </details>
+    </div>
+
+    <div class="card">
+      <h2>Γεύματα ημέρας</h2>
+      <ul id="entryList" class="entry-list">
+        <li class="empty-hint">Δεν έχεις καταχωρήσει ακόμα γεύματα για αυτή την ημέρα.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ================= FOODS LIBRARY VIEW ================= -->
+  <section id="view-foods" class="view">
+    <div class="card">
+      <h2>Τα τρόφιμά μου</h2>
+      <p class="hint">Αποθήκευσε εδώ τροφές που τρως συχνά, με τις θερμίδες/μακροθρεπτικά ανά μερίδα, ώστε να τις προσθέτεις γρήγορα στην ημέρα σου.</p>
+      <form id="foodForm" class="entry-form">
+        <input type="text" id="foodName" placeholder="Όνομα τροφίμου" required>
+        <input type="text" id="foodServing" placeholder="Μερίδα (π.χ. 100g, 1 φέτα)">
+        <input type="number" id="foodCal" placeholder="Θερμίδες" min="0" step="1" required>
+        <input type="number" id="foodPro" placeholder="Πρωτεΐνη (g)" min="0" step="0.1">
+        <input type="number" id="foodCarb" placeholder="Υδατ. (g)" min="0" step="0.1">
+        <input type="number" id="foodFat" placeholder="Λίπος (g)" min="0" step="0.1">
+        <button type="submit" class="btn primary">Αποθήκευση τροφίμου</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <table class="foods-table" id="foodsTable">
+        <thead>
+          <tr><th>Όνομα</th><th>Μερίδα</th><th>Kcal</th><th>P</th><th>C</th><th>F</th><th></th></tr>
+        </thead>
+        <tbody id="foodsTableBody">
+        </tbody>
+      </table>
+      <p class="empty-hint" id="foodsEmptyHint">Δεν έχεις προσθέσει ακόμα τρόφιμα.</p>
+    </div>
+  </section>
+
+  <!-- ================= HISTORY VIEW ================= -->
+  <section id="view-history" class="view">
+    <div class="card">
+      <h2>Ιστορικό θερμίδων (τελευταίες 14 ημέρες)</h2>
+      <canvas id="historyChart" height="220"></canvas>
+    </div>
+    <div class="card">
+      <h2>Σύνοψη ανά ημέρα</h2>
+      <table class="history-table">
+        <thead><tr><th>Ημερομηνία</th><th>Θερμίδες</th><th>Πρωτεΐνη</th><th>Υδατ.</th><th>Λίπος</th></tr></thead>
+        <tbody id="historyTableBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================= GOALS VIEW ================= -->
+  <section id="view-goals" class="view">
+    <div class="card">
+      <h2>Καθημερινοί στόχοι</h2>
+      <form id="goalsForm" class="goals-form">
+        <label>Θερμίδες (kcal)
+          <input type="number" id="goalCal" min="0" step="1" required>
+        </label>
+        <label>Πρωτεΐνη (g)
+          <input type="number" id="goalPro" min="0" step="1" required>
+        </label>
+        <label>Υδατάνθρακες (g)
+          <input type="number" id="goalCarb" min="0" step="1" required>
+        </label>
+        <label>Λίπος (g)
+          <input type="number" id="goalFat" min="0" step="1" required>
+        </label>
+        <button type="button" id="calcCaloriesBtn" class="btn secondary">Υπολογισμός θερμίδων από μακροθρεπτικά</button>
+        <button type="submit" class="btn primary">Αποθήκευση στόχων</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Δεδομένα</h2>
+      <p class="hint">Όλα τα δεδομένα αποθηκεύονται τοπικά στον browser σου (localStorage). Κάνε τακτικά εξαγωγή για backup.</p>
+      <div class="data-buttons">
+        <button id="exportBtn" class="btn secondary">Εξαγωγή δεδομένων (JSON)</button>
+        <label class="btn secondary file-label">Εισαγωγή δεδομένων
+          <input type="file" id="importInput" accept="application/json" hidden>
+        </label>
+        <button id="resetBtn" class="btn danger">Διαγραφή όλων των δεδομένων</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
