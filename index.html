@@ -137,6 +137,24 @@
         <li class="empty-hint">Δεν έχεις καταχωρήσει ακόμα γεύματα για αυτή την ημέρα.</li>
       </ul>
     </div>
+
+    <div class="card">
+      <div class="section-title-row">
+        <h2>Συμπληρώματα Ημέρας</h2>
+        <span class="supplements-count" id="supplementsCount">0/0</span>
+      </div>
+      <ul id="supplementsList" class="supplements-list">
+        <li class="empty-hint">Δεν έχεις προσθέσει ακόμα συμπληρώματα.</li>
+      </ul>
+      <details class="manual-entry">
+        <summary>Πρόσθεσε νέο συμπλήρωμα</summary>
+        <form id="supplementForm" class="entry-form">
+          <input type="text" id="supplementName" placeholder="Όνομα συμπληρώματος" required>
+          <input type="text" id="supplementNotes" placeholder="Δοσολογία / σημείωση (προαιρετικό)">
+          <button type="submit" class="btn secondary">Προσθήκη συμπληρώματος</button>
+        </form>
+      </details>
+    </div>
   </section>
 
   <!-- ================= FOODS LIBRARY VIEW ================= -->
@@ -178,6 +196,13 @@
       <table class="history-table">
         <thead><tr><th>Ημερομηνία</th><th>Θερμίδες</th><th>Πρωτεΐνη</th><th>Υδατ.</th><th>Λίπος</th></tr></thead>
         <tbody id="historyTableBody"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>Ιστορικό συμπληρωμάτων (τελευταίες 14 ημέρες)</h2>
+      <table class="history-table">
+        <thead><tr><th>Ημερομηνία</th><th>Ελήφθησαν</th></tr></thead>
+        <tbody id="supplementHistoryBody"></tbody>
       </table>
     </div>
   </section>

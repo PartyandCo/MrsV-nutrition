@@ -13,6 +13,8 @@ const STORAGE_KEYS = {
   goals: 'nutri.goals',
   foods: 'nutri.foods',
   entries: 'nutri.entries', // { 'YYYY-MM-DD': [ {id, name, cal, pro, carb, fat} ] }
+  supplements: 'nutri.supplements', // [ {id, name, notes} ]
+  supplementLog: 'nutri.supplementLog', // { 'YYYY-MM-DD': [ name, name, ... ] }
 };
 
 const DEFAULT_GOALS = { cal: 2000, pro: 120, carb: 220, fat: 65 };
@@ -21,6 +23,8 @@ let state = {
   goals: loadJSON(STORAGE_KEYS.goals, DEFAULT_GOALS),
   foods: loadJSON(STORAGE_KEYS.foods, []),
   entries: loadJSON(STORAGE_KEYS.entries, {}),
+  supplements: loadJSON(STORAGE_KEYS.supplements, []),
+  supplementLog: loadJSON(STORAGE_KEYS.supplementLog, {}),
   currentDate: todayStr(),
 };
 
@@ -116,6 +120,94 @@ function sumEntries(list) {
     acc.fat += Number(e.fat) || 0;
     return acc;
   }, { cal: 0, pro: 0, carb: 0, fat: 0 });
+}
+
+/* ---------------- supplements ---------------- */
+
+function getSupplementLogFor(dateStr) {
+  return state.supplementLog[dateStr] || [];
+}
+
+function toggleSupplementTaken(dateStr, name) {
+  const list = state.supplementLog[dateStr] ? [...state.supplementLog[dateStr]] : [];
+  const idx = list.indexOf(name);
+  if (idx >= 0) {
+    list.splice(idx, 1);
+  } else {
+    list.push(name);
+  }
+  if (list.length === 0) {
+    delete state.supplementLog[dateStr];
+  } else {
+    state.supplementLog[dateStr] = list;
+  }
+  saveJSON(STORAGE_KEYS.supplementLog, state.supplementLog);
+}
+
+function initSupplementsView() {
+  document.getElementById('supplementForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = document.getElementById('supplementName').value.trim();
+    const notes = document.getElementById('supplementNotes').value.trim();
+    if (!name) return;
+    if (state.supplements.some(s => s.name.toLowerCase() === name.toLowerCase())) {
+      showToast('Υπάρχει ήδη συμπλήρωμα με αυτό το όνομα.');
+      return;
+    }
+    state.supplements.push({ id: uid(), name, notes });
+    saveJSON(STORAGE_KEYS.supplements, state.supplements);
+    e.target.reset();
+    renderSupplements();
+    showToast('Το συμπλήρωμα προστέθηκε.');
+  });
+
+  document.getElementById('supplementsList').addEventListener('change', (e) => {
+    const cb = e.target.closest('.supplement-checkbox');
+    if (!cb) return;
+    toggleSupplementTaken(state.currentDate, cb.dataset.name);
+    renderSupplements();
+  });
+
+  document.getElementById('supplementsList').addEventListener('click', (e) => {
+    const btn = e.target.closest('.supplement-delete');
+    if (!btn) return;
+    if (!confirm('Διαγραφή αυτού του συμπληρώματος από τη λίστα;')) return;
+    state.supplements = state.supplements.filter(s => s.id !== btn.dataset.id);
+    saveJSON(STORAGE_KEYS.supplements, state.supplements);
+    renderSupplements();
+  });
+}
+
+function renderSupplements() {
+  const listEl = document.getElementById('supplementsList');
+  const countEl = document.getElementById('supplementsCount');
+  const takenList = getSupplementLogFor(state.currentDate);
+
+  if (state.supplements.length === 0) {
+    listEl.innerHTML = '<li class="empty-hint">Δεν έχεις προσθέσει ακόμα συμπληρώματα.</li>';
+    countEl.textContent = '0/0';
+    return;
+  }
+
+  const takenCount = state.supplements.filter(s => takenList.includes(s.name)).length;
+  countEl.textContent = `${takenCount}/${state.supplements.length}`;
+
+  listEl.innerHTML = state.supplements.map(s => {
+    const checked = takenList.includes(s.name);
+    return `
+      <li class="supplement-row">
+        <label class="supplement-label">
+          <input type="checkbox" class="supplement-checkbox" data-name="${escapeHtml(s.name)}" ${checked ? 'checked' : ''}>
+          <span class="checkbox-box" aria-hidden="true"></span>
+          <span class="supplement-text">
+            <span class="supplement-name">${escapeHtml(s.name)}</span>
+            ${s.notes ? `<span class="supplement-notes">${escapeHtml(s.notes)}</span>` : ''}
+          </span>
+        </label>
+        <button class="delete-btn supplement-delete" data-id="${s.id}" title="Διαγραφή από τη λίστα">✕</button>
+      </li>
+    `;
+  }).join('');
 }
 
 /* ---------------- TABS ---------------- */
@@ -379,6 +471,7 @@ function renderDay() {
   }
 
   renderQuickAddOptions();
+  renderSupplements();
 }
 
 function setBar(id, value, goal) {
@@ -516,6 +609,29 @@ function renderHistory() {
       <td>${round1(t.fat)}g</td>
     </tr>`;
   }).join('');
+
+  renderSupplementHistory();
+}
+
+function renderSupplementHistory() {
+  const days = getLastNDays(14);
+  const tbody = document.getElementById('supplementHistoryBody');
+
+  if (state.supplements.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="2" class="empty-hint">Δεν έχεις προσθέσει ακόμα συμπληρώματα.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = days.slice().reverse().map(d => {
+    const takenList = getSupplementLogFor(d);
+    const takenNames = state.supplements.filter(s => takenList.includes(s.name)).map(s => s.name);
+    const total = state.supplements.length;
+    const namesStr = takenNames.length ? ' — ' + takenNames.map(n => escapeHtml(n)).join(', ') : '';
+    return `<tr>
+      <td>${fmtDateLabel(d)}</td>
+      <td>${takenNames.length}/${total}${namesStr}</td>
+    </tr>`;
+  }).join('');
 }
 
 /* ---------------- GOALS VIEW ---------------- */
@@ -553,6 +669,8 @@ function initGoalsView() {
       goals: state.goals,
       foods: state.foods,
       entries: state.entries,
+      supplements: state.supplements,
+      supplementLog: state.supplementLog,
       exportedAt: new Date().toISOString(),
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -576,6 +694,8 @@ function initGoalsView() {
         if (data.goals) { state.goals = data.goals; saveJSON(STORAGE_KEYS.goals, state.goals); }
         if (data.foods) { state.foods = data.foods; saveJSON(STORAGE_KEYS.foods, state.foods); }
         if (data.entries) { state.entries = data.entries; saveJSON(STORAGE_KEYS.entries, state.entries); }
+        if (data.supplements) { state.supplements = data.supplements; saveJSON(STORAGE_KEYS.supplements, state.supplements); }
+        if (data.supplementLog) { state.supplementLog = data.supplementLog; saveJSON(STORAGE_KEYS.supplementLog, state.supplementLog); }
         initGoalsView();
         renderDay();
         renderFoods();
@@ -593,9 +713,13 @@ function initGoalsView() {
     localStorage.removeItem(STORAGE_KEYS.goals);
     localStorage.removeItem(STORAGE_KEYS.foods);
     localStorage.removeItem(STORAGE_KEYS.entries);
+    localStorage.removeItem(STORAGE_KEYS.supplements);
+    localStorage.removeItem(STORAGE_KEYS.supplementLog);
     state.goals = { ...DEFAULT_GOALS };
     state.foods = [];
     state.entries = {};
+    state.supplements = [];
+    state.supplementLog = {};
     initGoalsView();
     renderDay();
     renderFoods();
@@ -609,6 +733,7 @@ function init() {
   initTabs();
   initDayView();
   initAIView();
+  initSupplementsView();
   initFoodsView();
   initGoalsView();
   renderDay();
