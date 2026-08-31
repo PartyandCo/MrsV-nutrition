@@ -179,13 +179,15 @@
     </div>
 
     <div class="card">
-      <table class="foods-table" id="foodsTable">
-        <thead>
-          <tr><th>Όνομα</th><th>Μερίδα</th><th>Kcal</th><th>P</th><th>C</th><th>F</th><th></th></tr>
-        </thead>
-        <tbody id="foodsTableBody">
-        </tbody>
-      </table>
+      <div class="table-scroll">
+        <table class="foods-table" id="foodsTable">
+          <thead>
+            <tr><th>Όνομα</th><th>Μερίδα</th><th>Kcal</th><th>P</th><th>C</th><th>F</th><th></th></tr>
+          </thead>
+          <tbody id="foodsTableBody">
+          </tbody>
+        </table>
+      </div>
       <p class="empty-hint" id="foodsEmptyHint">Δεν έχεις προσθέσει ακόμα τρόφιμα.</p>
     </div>
   </section>
@@ -194,21 +196,37 @@
   <section id="view-history" class="view">
     <div class="card">
       <h2>Ιστορικό θερμίδων (τελευταίες 14 ημέρες)</h2>
-      <canvas id="historyChart" height="220"></canvas>
+      <div class="chart-wrap">
+        <canvas id="historyChart" height="220"></canvas>
+      </div>
     </div>
     <div class="card">
       <h2>Σύνοψη ανά ημέρα</h2>
-      <table class="history-table">
-        <thead><tr><th>Ημερομηνία</th><th>Θερμίδες</th><th>Πρωτεΐνη</th><th>Υδατ.</th><th>Λίπος</th></tr></thead>
-        <tbody id="historyTableBody"></tbody>
-      </table>
+      <div class="table-scroll">
+        <table class="history-table">
+          <thead><tr><th>Ημερομηνία</th><th>Θερμίδες</th><th>Πρωτεΐνη</th><th>Υδατ.</th><th>Λίπος</th></tr></thead>
+          <tbody id="historyTableBody"></tbody>
+        </table>
+      </div>
     </div>
     <div class="card">
-      <h2>Ιστορικό συμπληρωμάτων (τελευταίες 30 ημέρες)</h2>
-      <table class="history-table">
-        <thead><tr><th>Ημερομηνία</th><th>Ελήφθησαν</th></tr></thead>
-        <tbody id="supplementHistoryBody"></tbody>
-      </table>
+      <h2>Σύνοψη συμπληρωμάτων ανά μήνα (30 ημέρες)</h2>
+      <p class="hint">Πόσες φορές πήρες — και πόσες έχασες — κάθε συμπλήρωμα.</p>
+      <div class="table-scroll">
+        <table class="history-table">
+          <thead><tr><th>Συμπλήρωμα</th><th>Πάρθηκαν</th><th>Χάθηκαν</th></tr></thead>
+          <tbody id="supplementSummaryBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Ιστορικό συμπληρωμάτων ανά ημέρα (30 ημέρες)</h2>
+      <div class="table-scroll">
+        <table class="history-table">
+          <thead><tr><th>Ημερομηνία</th><th>Ελήφθησαν</th></tr></thead>
+          <tbody id="supplementHistoryBody"></tbody>
+        </table>
+      </div>
     </div>
   </section>
 
@@ -269,3 +287,4 @@
 <script src="js/app.js"></script>
 </body>
 </html>
+
