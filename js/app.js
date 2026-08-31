@@ -15,6 +15,8 @@ const STORAGE_KEYS = {
   entries: 'nutri.entries', // { 'YYYY-MM-DD': [ {id, name, cal, pro, carb, fat} ] }
   supplements: 'nutri.supplements', // [ {id, name, notes} ]
   supplementLog: 'nutri.supplementLog', // { 'YYYY-MM-DD': [ name, name, ... ] }
+  cloudPin: 'nutri.cloudPin', // plain string, not JSON — device-local, not synced
+  cloudLastSync: 'nutri.cloudLastSync', // ISO timestamp string
 };
 
 const DEFAULT_GOALS = { cal: 2000, pro: 120, carb: 220, fat: 65 };
@@ -51,6 +53,7 @@ function saveJSON(key, value) {
     console.error('Could not save', key, e);
     showToast('Σφάλμα αποθήκευσης — ελέγξτε τον χώρο αποθήκευσης του browser.');
   }
+  scheduleCloudBackup();
 }
 
 function todayStr() {
@@ -91,6 +94,170 @@ function showToast(msg) {
   el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+/* ---------------- cloud backup (Netlify Blobs) ---------------- */
+
+const CLOUD_SYNC_ENDPOINT = '/api/sync-data';
+const CLOUD_SYNC_DEBOUNCE_MS = 3000;
+let cloudSyncTimer = null;
+let cloudSyncInFlight = false;
+
+function getCloudPin() {
+  return localStorage.getItem(STORAGE_KEYS.cloudPin) || '';
+}
+
+function setCloudPin(pin) {
+  if (pin) {
+    localStorage.setItem(STORAGE_KEYS.cloudPin, pin);
+  } else {
+    localStorage.removeItem(STORAGE_KEYS.cloudPin);
+  }
+}
+
+function currentBackupPayload() {
+  return {
+    goals: state.goals,
+    foods: state.foods,
+    entries: state.entries,
+    supplements: state.supplements,
+    supplementLog: state.supplementLog,
+  };
+}
+
+function fmtSyncTime(iso) {
+  try {
+    return new Date(iso).toLocaleString('el-GR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return iso;
+  }
+}
+
+function renderCloudStatus(message) {
+  const el = document.getElementById('cloudSyncStatus');
+  if (!el) return;
+  if (message) {
+    el.textContent = message;
+    return;
+  }
+  const pin = getCloudPin();
+  if (!pin) {
+    el.textContent = 'Δεν έχει οριστεί PIN ακόμα.';
+    return;
+  }
+  const lastSync = localStorage.getItem(STORAGE_KEYS.cloudLastSync);
+  el.textContent = lastSync
+    ? `Ενεργό — τελευταία αποθήκευση στο cloud: ${fmtSyncTime(lastSync)}`
+    : 'Ενεργό — δεν έχει γίνει ακόμα αποθήκευση στο cloud.';
+}
+
+function scheduleCloudBackup() {
+  if (!getCloudPin()) return;
+  clearTimeout(cloudSyncTimer);
+  cloudSyncTimer = setTimeout(() => { performCloudBackup(); }, CLOUD_SYNC_DEBOUNCE_MS);
+}
+
+async function performCloudBackup() {
+  const pin = getCloudPin();
+  if (!pin || cloudSyncInFlight) return;
+  cloudSyncInFlight = true;
+  try {
+    const res = await fetch(CLOUD_SYNC_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin, payload: currentBackupPayload() }),
+    });
+    let data;
+    try { data = await res.json(); } catch { data = null; }
+    if (!res.ok || !data || !data.ok) {
+      renderCloudStatus('Δεν ήταν δυνατή η αποθήκευση στο cloud (θα ξαναδοκιμάσει στην επόμενη αλλαγή).');
+      return;
+    }
+    localStorage.setItem(STORAGE_KEYS.cloudLastSync, data.savedAt);
+    renderCloudStatus();
+  } catch (err) {
+    renderCloudStatus('Δεν ήταν δυνατή η σύνδεση με το cloud (θα ξαναδοκιμάσει στην επόμενη αλλαγή).');
+  } finally {
+    cloudSyncInFlight = false;
+  }
+}
+
+async function restoreFromCloud() {
+  const pin = getCloudPin();
+  if (!pin) {
+    showToast('Όρισε πρώτα ένα PIN.');
+    return;
+  }
+  renderCloudStatus('Έλεγχος για αντίγραφο στο cloud...');
+  try {
+    const res = await fetch(`${CLOUD_SYNC_ENDPOINT}?pin=${encodeURIComponent(pin)}`);
+    let data;
+    try { data = await res.json(); } catch { data = null; }
+    if (!res.ok || !data) {
+      renderCloudStatus('Σφάλμα κατά τον έλεγχο του cloud.');
+      return;
+    }
+    if (!data.found) {
+      showToast('Δεν βρέθηκε αντίγραφο για αυτό το PIN.');
+      renderCloudStatus();
+      return;
+    }
+    if (!confirm(`Βρέθηκε αντίγραφο στο cloud από ${fmtSyncTime(data.savedAt)}. Η επαναφορά θα αντικαταστήσει τα δεδομένα ΑΥΤΗΣ της συσκευής. Συνέχεια;`)) {
+      renderCloudStatus();
+      return;
+    }
+    const payload = data.data || {};
+    if (payload.goals) { state.goals = payload.goals; saveJSON(STORAGE_KEYS.goals, state.goals); }
+    if (payload.foods) { state.foods = payload.foods; saveJSON(STORAGE_KEYS.foods, state.foods); }
+    if (payload.entries) { state.entries = payload.entries; saveJSON(STORAGE_KEYS.entries, state.entries); }
+    if (payload.supplements) { state.supplements = payload.supplements; saveJSON(STORAGE_KEYS.supplements, state.supplements); }
+    if (payload.supplementLog) { state.supplementLog = payload.supplementLog; saveJSON(STORAGE_KEYS.supplementLog, state.supplementLog); }
+    initGoalsView();
+    renderDay();
+    renderFoods();
+    renderSupplementManageList();
+    localStorage.setItem(STORAGE_KEYS.cloudLastSync, data.savedAt);
+    renderCloudStatus();
+    showToast('Τα δεδομένα επαναφέρθηκαν από το cloud.');
+  } catch (err) {
+    renderCloudStatus('Δεν ήταν δυνατή η σύνδεση με το cloud.');
+  }
+}
+
+function initCloudSyncView() {
+  const pinInput = document.getElementById('cloudPin');
+  if (pinInput) pinInput.value = getCloudPin();
+  renderCloudStatus();
+
+  document.getElementById('cloudPinForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const pin = document.getElementById('cloudPin').value.trim();
+    if (pin && pin.length < 4) {
+      showToast('Το PIN πρέπει να έχει τουλάχιστον 4 χαρακτήρες.');
+      return;
+    }
+    setCloudPin(pin);
+    if (pin) {
+      showToast('Το PIN αποθηκεύτηκε. Γίνεται αρχική αποθήκευση στο cloud...');
+      performCloudBackup();
+    } else {
+      showToast('Το αυτόματο αντίγραφο cloud απενεργοποιήθηκε σε αυτή τη συσκευή.');
+    }
+    renderCloudStatus();
+  });
+
+  document.getElementById('cloudBackupNowBtn').addEventListener('click', () => {
+    if (!getCloudPin()) {
+      showToast('Όρισε πρώτα και αποθήκευσε ένα PIN.');
+      return;
+    }
+    renderCloudStatus('Αποθήκευση στο cloud...');
+    performCloudBackup();
+  });
+
+  document.getElementById('cloudRestoreBtn').addEventListener('click', () => {
+    restoreFromCloud();
+  });
 }
 
 /* ---------------- entries for a date ---------------- */
@@ -144,37 +311,49 @@ function toggleSupplementTaken(dateStr, name) {
   saveJSON(STORAGE_KEYS.supplementLog, state.supplementLog);
 }
 
+function sortedSupplements() {
+  return [...state.supplements].sort((a, b) => {
+    if (!a.time && !b.time) return 0;
+    if (!a.time) return 1;
+    if (!b.time) return -1;
+    return a.time.localeCompare(b.time);
+  });
+}
+
 function initSupplementsView() {
   document.getElementById('supplementForm').addEventListener('submit', (e) => {
     e.preventDefault();
     const name = document.getElementById('supplementName').value.trim();
+    const time = document.getElementById('supplementTime').value;
     const notes = document.getElementById('supplementNotes').value.trim();
     if (!name) return;
     if (state.supplements.some(s => s.name.toLowerCase() === name.toLowerCase())) {
       showToast('Υπάρχει ήδη συμπλήρωμα με αυτό το όνομα.');
       return;
     }
-    state.supplements.push({ id: uid(), name, notes });
+    state.supplements.push({ id: uid(), name, time, notes });
     saveJSON(STORAGE_KEYS.supplements, state.supplements);
     e.target.reset();
     renderSupplements();
+    renderSupplementManageList();
     showToast('Το συμπλήρωμα προστέθηκε.');
   });
 
-  document.getElementById('supplementsList').addEventListener('change', (e) => {
-    const cb = e.target.closest('.supplement-checkbox');
-    if (!cb) return;
-    toggleSupplementTaken(state.currentDate, cb.dataset.name);
+  document.getElementById('supplementsList').addEventListener('click', (e) => {
+    const btn = e.target.closest('.supplement-btn');
+    if (!btn) return;
+    toggleSupplementTaken(state.currentDate, btn.dataset.name);
     renderSupplements();
   });
 
-  document.getElementById('supplementsList').addEventListener('click', (e) => {
-    const btn = e.target.closest('.supplement-delete');
+  document.getElementById('supplementManageList').addEventListener('click', (e) => {
+    const btn = e.target.closest('.delete-btn');
     if (!btn) return;
     if (!confirm('Διαγραφή αυτού του συμπληρώματος από τη λίστα;')) return;
     state.supplements = state.supplements.filter(s => s.id !== btn.dataset.id);
     saveJSON(STORAGE_KEYS.supplements, state.supplements);
     renderSupplements();
+    renderSupplementManageList();
   });
 }
 
@@ -184,27 +363,47 @@ function renderSupplements() {
   const takenList = getSupplementLogFor(state.currentDate);
 
   if (state.supplements.length === 0) {
-    listEl.innerHTML = '<li class="empty-hint">Δεν έχεις προσθέσει ακόμα συμπληρώματα.</li>';
+    listEl.innerHTML = '<p class="empty-hint">Δεν έχεις προσθέσει ακόμα συμπληρώματα.</p>';
     countEl.textContent = '0/0';
     return;
   }
 
-  const takenCount = state.supplements.filter(s => takenList.includes(s.name)).length;
-  countEl.textContent = `${takenCount}/${state.supplements.length}`;
+  const sorted = sortedSupplements();
+  const takenCount = sorted.filter(s => takenList.includes(s.name)).length;
+  countEl.textContent = `${takenCount}/${sorted.length}`;
 
-  listEl.innerHTML = state.supplements.map(s => {
-    const checked = takenList.includes(s.name);
+  listEl.innerHTML = sorted.map(s => {
+    const taken = takenList.includes(s.name);
     return `
-      <li class="supplement-row">
-        <label class="supplement-label">
-          <input type="checkbox" class="supplement-checkbox" data-name="${escapeHtml(s.name)}" ${checked ? 'checked' : ''}>
-          <span class="checkbox-box" aria-hidden="true"></span>
-          <span class="supplement-text">
-            <span class="supplement-name">${escapeHtml(s.name)}</span>
-            ${s.notes ? `<span class="supplement-notes">${escapeHtml(s.notes)}</span>` : ''}
-          </span>
-        </label>
-        <button class="delete-btn supplement-delete" data-id="${s.id}" title="Διαγραφή από τη λίστα">✕</button>
+      <button type="button" class="supplement-btn" data-name="${escapeHtml(s.name)}" aria-pressed="${taken ? 'true' : 'false'}">
+        <span class="supplement-btn-name">${escapeHtml(s.name)}</span>
+        ${s.time ? `<span class="supplement-btn-time">${escapeHtml(s.time)}</span>` : ''}
+      </button>
+    `;
+  }).join('');
+}
+
+function renderSupplementManageList() {
+  const listEl = document.getElementById('supplementManageList');
+  if (!listEl) return;
+
+  if (state.supplements.length === 0) {
+    listEl.innerHTML = '<li class="empty-hint">Δεν έχεις προσθέσει ακόμα συμπληρώματα.</li>';
+    return;
+  }
+
+  const sorted = sortedSupplements();
+  listEl.innerHTML = sorted.map(s => {
+    const details = [s.time, s.notes].filter(Boolean).map(v => escapeHtml(v)).join(' · ');
+    return `
+      <li>
+        <div class="entry-main">
+          <span class="entry-name">${escapeHtml(s.name)}</span>
+          ${details ? `<span class="entry-macros">${details}</span>` : ''}
+        </div>
+        <div class="entry-actions">
+          <button class="delete-btn" data-id="${s.id}" title="Διαγραφή">✕</button>
+        </div>
       </li>
     `;
   }).join('');
@@ -614,7 +813,7 @@ function renderHistory() {
 }
 
 function renderSupplementHistory() {
-  const days = getLastNDays(14);
+  const days = getLastNDays(30);
   const tbody = document.getElementById('supplementHistoryBody');
 
   if (state.supplements.length === 0) {
@@ -622,10 +821,11 @@ function renderSupplementHistory() {
     return;
   }
 
+  const sorted = sortedSupplements();
   tbody.innerHTML = days.slice().reverse().map(d => {
     const takenList = getSupplementLogFor(d);
-    const takenNames = state.supplements.filter(s => takenList.includes(s.name)).map(s => s.name);
-    const total = state.supplements.length;
+    const takenNames = sorted.filter(s => takenList.includes(s.name)).map(s => s.name);
+    const total = sorted.length;
     const namesStr = takenNames.length ? ' — ' + takenNames.map(n => escapeHtml(n)).join(', ') : '';
     return `<tr>
       <td>${fmtDateLabel(d)}</td>
@@ -699,6 +899,7 @@ function initGoalsView() {
         initGoalsView();
         renderDay();
         renderFoods();
+        renderSupplementManageList();
         showToast('Τα δεδομένα εισήχθησαν επιτυχώς.');
       } catch (err) {
         showToast('Το αρχείο δεν είναι έγκυρο.');
@@ -723,6 +924,7 @@ function initGoalsView() {
     initGoalsView();
     renderDay();
     renderFoods();
+    renderSupplementManageList();
     showToast('Όλα τα δεδομένα διαγράφηκαν.');
   });
 }
@@ -736,8 +938,10 @@ function init() {
   initSupplementsView();
   initFoodsView();
   initGoalsView();
+  initCloudSyncView();
   renderDay();
   renderFoods();
+  renderSupplementManageList();
 }
 
 document.addEventListener('DOMContentLoaded', init);
