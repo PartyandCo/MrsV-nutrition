@@ -331,7 +331,7 @@ function initSupplementsView() {
       showToast('Υπάρχει ήδη συμπλήρωμα με αυτό το όνομα.');
       return;
     }
-    state.supplements.push({ id: uid(), name, time, notes });
+    state.supplements.push({ id: uid(), name, time, notes, createdAt: todayStr() });
     saveJSON(STORAGE_KEYS.supplements, state.supplements);
     e.target.reset();
     renderSupplements();
@@ -832,6 +832,33 @@ function renderSupplementHistory() {
       <td>${takenNames.length}/${total}${namesStr}</td>
     </tr>`;
   }).join('');
+
+  renderSupplementSummary(days);
+}
+
+function renderSupplementSummary(days) {
+  const tbody = document.getElementById('supplementSummaryBody');
+  if (!tbody) return;
+
+  if (state.supplements.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" class="empty-hint">Δεν έχεις προσθέσει ακόμα συμπληρώματα.</td></tr>';
+    return;
+  }
+
+  const sorted = sortedSupplements();
+  tbody.innerHTML = sorted.map(s => {
+    // Only count days from when the supplement was actually added, so a
+    // recently-added supplement doesn't look "missed" for days before it existed.
+    const relevantDays = s.createdAt ? days.filter(d => d >= s.createdAt) : days;
+    const total = relevantDays.length;
+    const taken = relevantDays.filter(d => getSupplementLogFor(d).includes(s.name)).length;
+    const missed = total - taken;
+    return `<tr>
+      <td>${escapeHtml(s.name)}</td>
+      <td>${taken}/${total}</td>
+      <td>${missed}</td>
+    </tr>`;
+  }).join('');
 }
 
 /* ---------------- GOALS VIEW ---------------- */
@@ -945,3 +972,4 @@ function init() {
 }
 
 document.addEventListener('DOMContentLoaded', init);
+
