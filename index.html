@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Διατροφικό Ημερολόγιο</title>
+<title>Mrs V Nutrition Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:ital,wght@0,400;0,600;0,700;1,400&family=Noto+Serif:ital,wght@0,400;0,600;1,400&display=swap">
@@ -13,7 +13,7 @@
 
 <header class="topbar">
   <div class="brand">
-    <span class="brand-name">Διατροφικό Ημερολόγιο</span>
+    <span class="brand-name">Mrs V Nutrition Tracker</span>
     <span class="brand-tagline">Δελτίο Καταγραφής Θρεπτικής Αξίας</span>
   </div>
   <nav class="tabs" id="tabs">
@@ -114,8 +114,10 @@
         <select id="quickAddSelect">
           <option value="">— Επιλογή από τα τρόφιμά μου —</option>
         </select>
-        <input type="number" id="quickAddQty" min="0.1" step="0.1" value="1" title="Μερίδες">
-        <button id="quickAddBtn" class="btn primary">Προσθήκη</button>
+        <div class="quick-add-row-2">
+          <input type="number" id="quickAddQty" min="0.1" step="0.1" value="1" title="Μερίδες">
+          <button id="quickAddBtn" class="btn primary">Προσθήκη</button>
+        </div>
       </div>
 
       <details class="manual-entry">
@@ -143,16 +145,19 @@
         <h2>Συμπληρώματα Ημέρας</h2>
         <span class="supplements-count" id="supplementsCount">0/0</span>
       </div>
-      <ul id="supplementsList" class="supplements-list">
-        <li class="empty-hint">Δεν έχεις προσθέσει ακόμα συμπληρώματα.</li>
-      </ul>
+      <p class="hint">Πάτα σε ένα συμπλήρωμα όταν το πάρεις.</p>
+      <div id="supplementsList" class="supplements-grid">
+        <p class="empty-hint">Δεν έχεις προσθέσει ακόμα συμπληρώματα.</p>
+      </div>
       <details class="manual-entry">
-        <summary>Πρόσθεσε νέο συμπλήρωμα</summary>
+        <summary>Πρόσθεσε ή διάγραψε συμπλήρωμα</summary>
         <form id="supplementForm" class="entry-form">
           <input type="text" id="supplementName" placeholder="Όνομα συμπληρώματος" required>
+          <input type="time" id="supplementTime" placeholder="Ώρα λήψης">
           <input type="text" id="supplementNotes" placeholder="Δοσολογία / σημείωση (προαιρετικό)">
           <button type="submit" class="btn secondary">Προσθήκη συμπληρώματος</button>
         </form>
+        <ul id="supplementManageList" class="entry-list"></ul>
       </details>
     </div>
   </section>
@@ -199,7 +204,7 @@
       </table>
     </div>
     <div class="card">
-      <h2>Ιστορικό συμπληρωμάτων (τελευταίες 14 ημέρες)</h2>
+      <h2>Ιστορικό συμπληρωμάτων (τελευταίες 30 ημέρες)</h2>
       <table class="history-table">
         <thead><tr><th>Ημερομηνία</th><th>Ελήφθησαν</th></tr></thead>
         <tbody id="supplementHistoryBody"></tbody>
@@ -238,6 +243,20 @@
           <input type="file" id="importInput" accept="application/json" hidden>
         </label>
         <button id="resetBtn" class="btn danger">Διαγραφή όλων των δεδομένων</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Αντίγραφο ασφαλείας στο cloud</h2>
+      <p class="hint">Πρόσθετο αντίγραφο των δεδομένων σου online, ώστε να μη χαθούν αν καθαριστεί ο browser της συσκευής σου. Γίνεται αυτόματα μετά από κάθε αλλαγή, εφόσον έχεις ορίσει PIN. Όρισε ένα προσωπικό PIN που θα θυμάσαι — δεν έχει «ξέχασα το PIN», και όποιος το ξέρει μπορεί να δει/αλλάξει αυτό το αντίγραφο, οπότε διάλεξε κάτι όχι προφανές.</p>
+      <p class="hint" id="cloudSyncStatus">Δεν έχει οριστεί PIN ακόμα.</p>
+      <form id="cloudPinForm" class="entry-form">
+        <input type="password" id="cloudPin" placeholder="Το PIN σου (4+ χαρακτήρες)" autocomplete="off">
+        <button type="submit" class="btn secondary">Αποθήκευση PIN</button>
+      </form>
+      <div class="data-buttons">
+        <button id="cloudBackupNowBtn" class="btn secondary">Αποθήκευση στο cloud τώρα</button>
+        <button id="cloudRestoreBtn" class="btn secondary">Επαναφορά από το cloud</button>
       </div>
     </div>
   </section>

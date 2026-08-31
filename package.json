@@ -1,0 +1,8 @@
+{
+  "name": "mrs-v-nutrition-tracker",
+  "private": true,
+  "description": "Netlify build dependencies for the nutrition tracker's serverless functions (AI meal estimation + cloud backup).",
+  "dependencies": {
+    "@netlify/blobs": "latest"
+  }
+}
