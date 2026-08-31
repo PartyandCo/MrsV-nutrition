@@ -13,27 +13,6 @@
   --radius: 0px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0D0D0C;
-    --surface: #161614;
-    --ink: #FFFFFF;
-    --ink-muted: #A3A3A3;
-    --line: #FFFFFF;
-    --line-soft: #3A3A38;
-    --accent: #C97D6E;
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #0D0D0C;
-  --surface: #161614;
-  --ink: #FFFFFF;
-  --ink-muted: #A3A3A3;
-  --line: #FFFFFF;
-  --line-soft: #3A3A38;
-  --accent: #C97D6E;
-}
-
 * { box-sizing: border-box; }
 
 [hidden] { display: none !important; }
@@ -598,11 +577,6 @@ button, input, select, textarea { font-family: inherit; color: var(--ink); }
   font-variant-numeric: tabular-nums;
   opacity: 0.75;
 }
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .supplement-btn { background: var(--surface); }
-}
-:root[data-theme="dark"] .supplement-btn { background: var(--surface); }
 
 /* ---------------- tables ---------------- */
 
