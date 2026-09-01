@@ -215,6 +215,18 @@
   <!-- ================= HISTORY VIEW ================= -->
   <section id="view-history" class="view">
     <div class="card">
+      <div class="section-title-row">
+        <h2>Στατιστικά</h2>
+        <div class="stats-period-toggle" id="statsPeriodToggle">
+          <button type="button" class="period-btn active" data-days="7">7 ημέρες</button>
+          <button type="button" class="period-btn" data-days="30">30 ημέρες</button>
+        </div>
+      </div>
+      <p class="hint">Μέσοι όροι και προσήλωση στους στόχους σου για την επιλεγμένη περίοδο (μόνο ημέρες με καταχωρήσεις μετράνε στους μέσους όρους).</p>
+      <div class="stats-grid" id="statsGrid"></div>
+      <p class="empty-hint" id="statsHint" hidden></p>
+    </div>
+    <div class="card">
       <h2>Ιστορικό θερμίδων (τελευταίες 14 ημέρες)</h2>
       <div class="chart-wrap">
         <canvas id="historyChart" height="220"></canvas>
