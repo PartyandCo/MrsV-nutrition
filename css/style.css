@@ -145,6 +145,26 @@ button, input, select, textarea { font-family: inherit; color: var(--ink); }
   line-height: 1.5;
 }
 
+.or-divider {
+  text-align: center;
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 14px 0 10px;
+  position: relative;
+}
+.or-divider::before, .or-divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 30%;
+  border-top: 1px solid var(--line-soft);
+}
+.or-divider::before { left: 0; }
+.or-divider::after { right: 0; }
+
 /* ---------------- day header / date ---------------- */
 
 .day-header label {
