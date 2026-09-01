@@ -1081,9 +1081,86 @@ function initStatsView() {
   });
 }
 
+let historyPeriodDays = 30;
+let historyGroupBy = 'day'; // 'day' | 'week'
+
+// Splits a chronological (oldest-first) list of dates into 7-day chunks,
+// counting back from the most recent day, and returns them newest-chunk-first.
+function groupDaysIntoWeeks(days) {
+  const buckets = [];
+  for (let i = days.length - 1; i >= 0; i -= 7) {
+    const chunkStart = Math.max(0, i - 6);
+    buckets.push(days.slice(chunkStart, i + 1));
+  }
+  return buckets;
+}
+
+function weekRangeLabel(chunk) {
+  if (chunk.length === 1) return fmtDateLabel(chunk[0]);
+  return `${fmtDateLabel(chunk[0])}–${fmtDateLabel(chunk[chunk.length - 1])}`;
+}
+
+// Renders the "Όλα τα δεδομένα ανά ημέρα" table either as one row per day,
+// or (groupBy === 'week') as one row per 7-day chunk showing the average of
+// whichever days in that chunk actually have entries.
+function renderHistoryTable(days, groupBy) {
+  const tbody = document.getElementById('historyTableBody');
+  if (!tbody) return;
+
+  if (groupBy === 'week') {
+    const weeks = groupDaysIntoWeeks(days);
+    tbody.innerHTML = weeks.map(chunk => {
+      const dayStats = chunk.map(d => ({ hasEntries: getEntriesFor(d).length > 0, totals: sumEntries(getEntriesFor(d)) }));
+      const logged = dayStats.filter(d => d.hasEntries);
+      const n = logged.length;
+      if (n === 0) {
+        return `<tr><td>${weekRangeLabel(chunk)}</td><td colspan="5" class="empty-hint" style="padding:4px 0;">Χωρίς καταχωρήσεις</td></tr>`;
+      }
+      const avg = (key) => logged.reduce((s, d) => s + (d.totals[key] || 0), 0) / n;
+      return `<tr>
+        <td>${weekRangeLabel(chunk)}</td>
+        <td>${Math.round(avg('cal'))}</td>
+        <td>${round1(avg('pro'))}g</td>
+        <td>${round1(avg('carb'))}g</td>
+        <td>${round1(avg('fat'))}g</td>
+        <td>${round1(avg('fib'))}g</td>
+      </tr>`;
+    }).join('');
+  } else {
+    tbody.innerHTML = days.slice().reverse().map(d => {
+      const t = sumEntries(getEntriesFor(d));
+      return `<tr>
+        <td>${fmtDateLabel(d)}</td>
+        <td>${Math.round(t.cal)}</td>
+        <td>${round1(t.pro)}g</td>
+        <td>${round1(t.carb)}g</td>
+        <td>${round1(t.fat)}g</td>
+        <td>${round1(t.fib || 0)}g</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+function initHistoryControls() {
+  document.getElementById('historyPeriodToggle').addEventListener('click', (e) => {
+    const btn = e.target.closest('.period-btn');
+    if (!btn) return;
+    historyPeriodDays = parseInt(btn.dataset.days, 10) || 30;
+    document.querySelectorAll('#historyPeriodToggle .period-btn').forEach(b => b.classList.toggle('active', b === btn));
+    renderHistory();
+  });
+
+  document.getElementById('historyGroupToggle').addEventListener('click', (e) => {
+    const btn = e.target.closest('.period-btn');
+    if (!btn) return;
+    historyGroupBy = btn.dataset.group;
+    document.querySelectorAll('#historyGroupToggle .period-btn').forEach(b => b.classList.toggle('active', b === btn));
+    renderHistoryTable(getLastNDays(historyPeriodDays), historyGroupBy);
+  });
+}
+
 function renderHistory() {
-  renderStats(statsPeriodDays);
-  const days = getLastNDays(14);
+  const days = getLastNDays(historyPeriodDays);
   const totalsPerDay = days.map(d => sumEntries(getEntriesFor(d)));
 
   const ctx = document.getElementById('historyChart');
@@ -1127,19 +1204,8 @@ function renderHistory() {
   });
   }
 
-  const tbody = document.getElementById('historyTableBody');
-  tbody.innerHTML = days.slice().reverse().map((d, idx) => {
-    const t = totalsPerDay[days.length - 1 - idx];
-    return `<tr>
-      <td>${fmtDateLabel(d)}</td>
-      <td>${Math.round(t.cal)}</td>
-      <td>${round1(t.pro)}g</td>
-      <td>${round1(t.carb)}g</td>
-      <td>${round1(t.fat)}g</td>
-      <td>${round1(t.fib || 0)}g</td>
-    </tr>`;
-  }).join('');
-
+  renderHistoryTable(days, historyGroupBy);
+  renderStats(statsPeriodDays);
   renderSupplementHistory();
 }
 
@@ -1300,10 +1366,10 @@ function init() {
   initGoalsView();
   initCloudSyncView();
   initStatsView();
+  initHistoryControls();
   renderDay();
   renderFoods();
   renderSupplementManageList();
 }
 
 document.addEventListener('DOMContentLoaded', init);
-
