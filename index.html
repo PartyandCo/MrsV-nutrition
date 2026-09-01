@@ -77,11 +77,23 @@
       <div class="section-title-row">
         <h2>Πες μου τι έφαγες</h2>
       </div>
-      <p class="hint">Γράψε ελεύθερα τι έφαγες (π.χ. «2 αυγά τηγανητά και μια φέτα ψωμί») και το AI θα υπολογίσει θερμίδες και μακροθρεπτικά.</p>
+      <p class="hint">Γράψε ελεύθερα τι έφαγες (π.χ. «2 αυγά τηγανητά και μια φέτα ψωμί») και το AI θα υπολογίσει θερμίδες και μακροθρεπτικά. Ή σάρωσε φωτογραφία μιας ετικέτας/barcode πιο κάτω.</p>
 
       <form id="aiForm" class="ai-form">
         <textarea id="aiDescription" rows="2" placeholder="π.χ. Μια μερίδα κοτόπουλο σουβλάκι με πίτα και τζατζίκι" required></textarea>
         <button type="submit" id="aiEstimateBtn" class="btn primary">Υπολόγισε με AI</button>
+      </form>
+
+      <p class="or-divider">ή σάρωσε</p>
+
+      <label class="btn secondary file-label">
+        Επίλεξε φωτογραφία ετικέτας/barcode
+        <input type="file" id="scanPhotoInput" accept="image/*" capture="environment" hidden>
+      </label>
+
+      <form id="scanBarcodeForm" class="entry-form">
+        <input type="text" id="scanBarcodeInput" inputmode="numeric" placeholder="Ή πληκτρολόγησε barcode">
+        <button type="submit" class="btn secondary">Αναζήτηση barcode</button>
       </form>
 
       <div id="aiLoading" class="ai-loading" hidden>
@@ -90,9 +102,18 @@
 
       <div id="aiError" class="ai-error" hidden></div>
 
+      <div id="scanGramsStep" hidden>
+        <p class="ai-result-note" id="scanPer100Note"></p>
+        <p class="ai-result-note" id="scanIngredientsNote" hidden></p>
+        <div class="entry-form">
+          <input type="number" id="scanGrams" placeholder="Πόσα γραμμάρια έφαγες;" min="0" step="1">
+          <button type="button" id="scanCalcBtn" class="btn secondary">Υπολόγισε ποσότητα</button>
+        </div>
+      </div>
+
       <div id="aiResult" class="ai-result" hidden>
         <div class="ai-result-header">
-          <span class="ai-result-title">Εκτίμηση AI</span>
+          <span class="ai-result-title">Εκτίμηση</span>
           <span class="ai-result-hint">Μπορείς να διορθώσεις τις τιμές πριν την προσθήκη</span>
         </div>
         <input type="text" id="aiResultName" class="ai-result-name" placeholder="Όνομα γεύματος">
@@ -104,61 +125,10 @@
           <input type="number" id="aiResultFib" placeholder="Ίνες (g)" min="0" step="0.1">
         </div>
         <p id="aiResultNote" class="ai-result-note" hidden></p>
-        <div class="ai-result-actions">
-          <button type="button" id="aiConfirmBtn" class="btn primary">Προσθήκη στην ημέρα</button>
-          <button type="button" id="aiDiscardBtn" class="btn secondary">Άκυρο</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="section-title-row">
-        <h2>Σκάναρε ετικέτα ή barcode</h2>
-      </div>
-      <p class="hint">Ανέβασε φωτογραφία της ετικέτας διατροφικών στοιχείων ή του barcode — το AI θα προσπαθήσει να διαβάσει τις τιμές ανά 100γρ. Μετά θα σε ρωτήσει πόσα γραμμάρια έφαγες.</p>
-
-      <label class="btn secondary file-label">
-        Επίλεξε φωτογραφία
-        <input type="file" id="scanPhotoInput" accept="image/*" capture="environment" hidden>
-      </label>
-
-      <p class="hint">Ή πληκτρολόγησε τον αριθμό barcode:</p>
-      <form id="scanBarcodeForm" class="entry-form">
-        <input type="text" id="scanBarcodeInput" inputmode="numeric" placeholder="π.χ. 5201234567890">
-        <button type="submit" class="btn secondary">Αναζήτηση barcode</button>
-      </form>
-
-      <div id="scanLoading" class="ai-loading" hidden>
-        <span class="spinner"></span> Διαβάζω...
-      </div>
-
-      <div id="scanError" class="ai-error" hidden></div>
-
-      <div id="scanResult" class="ai-result" hidden>
-        <div class="ai-result-header">
-          <span class="ai-result-title">Στοιχεία προϊόντος</span>
-        </div>
-        <input type="text" id="scanResultName" class="ai-result-name" placeholder="Όνομα προϊόντος">
-        <p class="ai-result-note" id="scanPer100Note"></p>
-        <p class="ai-result-note" id="scanIngredientsNote" hidden></p>
-
-        <div class="entry-form">
-          <input type="number" id="scanGrams" placeholder="Πόσα γραμμάρια έφαγες;" min="0" step="1">
-          <button type="button" id="scanCalcBtn" class="btn secondary">Υπολόγισε</button>
-        </div>
-
-        <div id="scanComputedFields" class="entry-form ai-result-fields" hidden>
-          <input type="number" id="scanCal" placeholder="Θερμίδες" min="0" step="1">
-          <input type="number" id="scanPro" placeholder="Πρωτεΐνη (g)" min="0" step="0.1">
-          <input type="number" id="scanCarb" placeholder="Υδατ. (g)" min="0" step="0.1">
-          <input type="number" id="scanFat" placeholder="Λίπος (g)" min="0" step="0.1">
-          <input type="number" id="scanFib" placeholder="Ίνες (g)" min="0" step="0.1">
-        </div>
-
         <div class="ai-result-actions stacked">
-          <button type="button" id="scanConfirmBtn" class="btn primary">Προσθήκη στην ημέρα</button>
-          <button type="button" id="scanFavoriteBtn" class="btn secondary">Πρόσθεσε στα αγαπημένα (ανά 100γρ)</button>
-          <button type="button" id="scanDiscardBtn" class="btn secondary">Άκυρο</button>
+          <button type="button" id="aiConfirmBtn" class="btn primary">Προσθήκη στην ημέρα</button>
+          <button type="button" id="aiFavoriteBtn" class="btn secondary" hidden>Πρόσθεσε στα αγαπημένα (ανά 100γρ)</button>
+          <button type="button" id="aiDiscardBtn" class="btn secondary">Άκυρο</button>
         </div>
       </div>
     </div>
