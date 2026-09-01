@@ -579,9 +579,9 @@ function showGramsStep(result) {
 }
 
 // Populates the one shared, editable result panel (used by all three entry
-// paths) and shows/hides the "add to favorites" button — that only makes
-// sense for a scan result (a reusable per-100g item), not a one-off
-// free-text meal estimate.
+// paths) and labels the "add to favorites" button appropriately — a scan
+// result is a reusable per-100g item, while a free-text AI estimate is
+// saved as-is (the amounts shown, for whatever quantity was described).
 function showAIResult({ name, cal, pro, carb, fat, fib, note }) {
   document.getElementById('aiResultName').value = name || 'Γεύμα';
   document.getElementById('aiResultCal').value = Math.round(cal || 0);
@@ -598,7 +598,11 @@ function showAIResult({ name, cal, pro, carb, fat, fib, note }) {
     noteEl.hidden = true;
   }
 
-  document.getElementById('aiFavoriteBtn').hidden = !currentScanResult;
+  const favBtn = document.getElementById('aiFavoriteBtn');
+  favBtn.hidden = false;
+  favBtn.textContent = currentScanResult
+    ? 'Πρόσθεσε στα αγαπημένα (ανά 100γρ)'
+    : 'Πρόσθεσε στα αγαπημένα';
   hideGramsStep();
   document.getElementById('aiResult').hidden = false;
 }
@@ -797,23 +801,44 @@ function initAIView() {
   });
 
   document.getElementById('aiFavoriteBtn').addEventListener('click', () => {
-    if (!currentScanResult) return;
-    const name = document.getElementById('aiResultName').value.trim() || 'Σκαναρισμένο τρόφιμο';
-    const p = currentScanResult.per_100g;
-    state.foods.push({
-      id: uid(),
-      name,
-      serving: '100g',
-      cal: round1(p.calories || 0),
-      pro: round1(p.protein_g || 0),
-      carb: round1(p.carbs_g || 0),
-      fat: round1(p.fat_g || 0),
-      fib: round1(p.fiber_g || 0),
-    });
-    saveJSON(STORAGE_KEYS.foods, state.foods);
-    renderFoods();
-    renderQuickAddOptions();
-    showToast('Προστέθηκε στα αγαπημένα (τιμές ανά 100γρ) — χρησιμοποίησε τις «μερίδες» στη γρήγορη προσθήκη για να πολλαπλασιάσεις.');
+    const name = document.getElementById('aiResultName').value.trim() || 'Αγαπημένο τρόφιμο';
+    if (currentScanResult) {
+      // Scan result: naturally a per-100g item, so save it that way — the
+      // "μερίδες" multiplier in quick-add then scales it up.
+      const p = currentScanResult.per_100g;
+      state.foods.push({
+        id: uid(),
+        name,
+        serving: '100g',
+        cal: round1(p.calories || 0),
+        pro: round1(p.protein_g || 0),
+        carb: round1(p.carbs_g || 0),
+        fat: round1(p.fat_g || 0),
+        fib: round1(p.fiber_g || 0),
+      });
+      saveJSON(STORAGE_KEYS.foods, state.foods);
+      renderFoods();
+      renderQuickAddOptions();
+      showToast('Προστέθηκε στα αγαπημένα (τιμές ανά 100γρ) — χρησιμοποίησε τις «μερίδες» στη γρήγορη προσθήκη για να πολλαπλασιάσεις.');
+    } else {
+      // Free-text AI estimate: no natural per-100g basis, so save exactly
+      // the amounts currently shown (for whatever quantity was described).
+      const cal = parseFloat(document.getElementById('aiResultCal').value) || 0;
+      const pro = parseFloat(document.getElementById('aiResultPro').value) || 0;
+      const carb = parseFloat(document.getElementById('aiResultCarb').value) || 0;
+      const fat = parseFloat(document.getElementById('aiResultFat').value) || 0;
+      const fib = parseFloat(document.getElementById('aiResultFib').value) || 0;
+      state.foods.push({
+        id: uid(),
+        name,
+        serving: '',
+        cal: round1(cal), pro: round1(pro), carb: round1(carb), fat: round1(fat), fib: round1(fib),
+      });
+      saveJSON(STORAGE_KEYS.foods, state.foods);
+      renderFoods();
+      renderQuickAddOptions();
+      showToast('Προστέθηκε στα αγαπημένα.');
+    }
   });
 
   document.getElementById('aiDiscardBtn').addEventListener('click', () => {
@@ -903,24 +928,8 @@ function escapeHtml(str) {
 /* ---------------- FOODS LIBRARY VIEW ---------------- */
 
 function initFoodsView() {
-  document.getElementById('foodForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const name = document.getElementById('foodName').value.trim();
-    const serving = document.getElementById('foodServing').value.trim();
-    const cal = parseFloat(document.getElementById('foodCal').value) || 0;
-    const pro = parseFloat(document.getElementById('foodPro').value) || 0;
-    const carb = parseFloat(document.getElementById('foodCarb').value) || 0;
-    const fat = parseFloat(document.getElementById('foodFat').value) || 0;
-    const fib = parseFloat(document.getElementById('foodFib').value) || 0;
-    if (!name) return;
-    state.foods.push({ id: uid(), name, serving, cal, pro, carb, fat, fib });
-    saveJSON(STORAGE_KEYS.foods, state.foods);
-    e.target.reset();
-    renderFoods();
-    renderQuickAddOptions();
-    showToast('Το τρόφιμο αποθηκεύτηκε.');
-  });
-
+  // No add-form here anymore — foods are saved as favorites from the Day
+  // view (AI-text or scan results). This view only lists and deletes them.
   document.getElementById('foodsTableBody').addEventListener('click', (e) => {
     const btn = e.target.closest('.delete-btn');
     if (!btn) return;
@@ -1187,4 +1196,3 @@ function init() {
 }
 
 document.addEventListener('DOMContentLoaded', init);
-
