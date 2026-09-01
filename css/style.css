@@ -624,6 +624,68 @@ button, input, select, textarea { font-family: inherit; color: var(--ink); }
 }
 .table-scroll { overflow-x: auto; }
 
+/* ---------------- statistics ---------------- */
+
+.stats-period-toggle { display: flex; gap: 6px; }
+
+.period-btn {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  font-family: "Noto Serif Display", Georgia, serif;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.period-btn:hover { background: var(--line-soft); }
+.period-btn.active { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.stat-tile {
+  border: 1px solid var(--line-soft);
+  padding: 10px;
+}
+.stat-tile.wide { grid-column: 1 / -1; }
+
+.stat-tile-label {
+  font-size: 0.66rem;
+  color: var(--ink-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+
+.stat-tile-value {
+  font-family: "Noto Serif Display", Georgia, serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.stat-tile-value span {
+  font-family: "Noto Serif", serif;
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+
+.stat-tile-sub {
+  font-size: 0.7rem;
+  color: var(--ink-muted);
+  margin-top: 3px;
+}
+.stat-tile-sub.over { color: var(--accent); }
+
 .chart-wrap {
   position: relative;
   width: 100%;
@@ -656,3 +718,4 @@ button, input, select, textarea { font-family: inherit; color: var(--ink); }
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+
