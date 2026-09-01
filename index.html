@@ -64,6 +64,11 @@
             <div class="macro-value"><span id="fatSum">0</span>/<span id="fatGoal">0</span>g</div>
             <div class="progress-track small"><div id="fatBar" class="progress-fill fat"></div></div>
           </div>
+          <div class="macro-item">
+            <div class="macro-label">Ίνες</div>
+            <div class="macro-value"><span id="fibSum">0</span>/<span id="fibGoal">0</span>g</div>
+            <div class="progress-track small"><div id="fibBar" class="progress-fill fib"></div></div>
+          </div>
         </div>
       </div>
     </div>
@@ -96,11 +101,64 @@
           <input type="number" id="aiResultPro" placeholder="Πρωτεΐνη (g)" min="0" step="0.1">
           <input type="number" id="aiResultCarb" placeholder="Υδατ. (g)" min="0" step="0.1">
           <input type="number" id="aiResultFat" placeholder="Λίπος (g)" min="0" step="0.1">
+          <input type="number" id="aiResultFib" placeholder="Ίνες (g)" min="0" step="0.1">
         </div>
         <p id="aiResultNote" class="ai-result-note" hidden></p>
         <div class="ai-result-actions">
           <button type="button" id="aiConfirmBtn" class="btn primary">Προσθήκη στην ημέρα</button>
           <button type="button" id="aiDiscardBtn" class="btn secondary">Άκυρο</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title-row">
+        <h2>Σκάναρε ετικέτα ή barcode</h2>
+      </div>
+      <p class="hint">Ανέβασε φωτογραφία της ετικέτας διατροφικών στοιχείων ή του barcode — το AI θα προσπαθήσει να διαβάσει τις τιμές ανά 100γρ. Μετά θα σε ρωτήσει πόσα γραμμάρια έφαγες.</p>
+
+      <label class="btn secondary file-label">
+        Επίλεξε φωτογραφία
+        <input type="file" id="scanPhotoInput" accept="image/*" capture="environment" hidden>
+      </label>
+
+      <p class="hint">Ή πληκτρολόγησε τον αριθμό barcode:</p>
+      <form id="scanBarcodeForm" class="entry-form">
+        <input type="text" id="scanBarcodeInput" inputmode="numeric" placeholder="π.χ. 5201234567890">
+        <button type="submit" class="btn secondary">Αναζήτηση barcode</button>
+      </form>
+
+      <div id="scanLoading" class="ai-loading" hidden>
+        <span class="spinner"></span> Διαβάζω...
+      </div>
+
+      <div id="scanError" class="ai-error" hidden></div>
+
+      <div id="scanResult" class="ai-result" hidden>
+        <div class="ai-result-header">
+          <span class="ai-result-title">Στοιχεία προϊόντος</span>
+        </div>
+        <input type="text" id="scanResultName" class="ai-result-name" placeholder="Όνομα προϊόντος">
+        <p class="ai-result-note" id="scanPer100Note"></p>
+        <p class="ai-result-note" id="scanIngredientsNote" hidden></p>
+
+        <div class="entry-form">
+          <input type="number" id="scanGrams" placeholder="Πόσα γραμμάρια έφαγες;" min="0" step="1">
+          <button type="button" id="scanCalcBtn" class="btn secondary">Υπολόγισε</button>
+        </div>
+
+        <div id="scanComputedFields" class="entry-form ai-result-fields" hidden>
+          <input type="number" id="scanCal" placeholder="Θερμίδες" min="0" step="1">
+          <input type="number" id="scanPro" placeholder="Πρωτεΐνη (g)" min="0" step="0.1">
+          <input type="number" id="scanCarb" placeholder="Υδατ. (g)" min="0" step="0.1">
+          <input type="number" id="scanFat" placeholder="Λίπος (g)" min="0" step="0.1">
+          <input type="number" id="scanFib" placeholder="Ίνες (g)" min="0" step="0.1">
+        </div>
+
+        <div class="ai-result-actions stacked">
+          <button type="button" id="scanConfirmBtn" class="btn primary">Προσθήκη στην ημέρα</button>
+          <button type="button" id="scanFavoriteBtn" class="btn secondary">Πρόσθεσε στα αγαπημένα (ανά 100γρ)</button>
+          <button type="button" id="scanDiscardBtn" class="btn secondary">Άκυρο</button>
         </div>
       </div>
     </div>
@@ -128,6 +186,7 @@
           <input type="number" id="manualPro" placeholder="Πρωτεΐνη (g)" min="0" step="0.1">
           <input type="number" id="manualCarb" placeholder="Υδατ. (g)" min="0" step="0.1">
           <input type="number" id="manualFat" placeholder="Λίπος (g)" min="0" step="0.1">
+          <input type="number" id="manualFib" placeholder="Ίνες (g)" min="0" step="0.1">
           <button type="submit" class="btn secondary">Προσθήκη γεύματος</button>
         </form>
       </details>
@@ -174,6 +233,7 @@
         <input type="number" id="foodPro" placeholder="Πρωτεΐνη (g)" min="0" step="0.1">
         <input type="number" id="foodCarb" placeholder="Υδατ. (g)" min="0" step="0.1">
         <input type="number" id="foodFat" placeholder="Λίπος (g)" min="0" step="0.1">
+        <input type="number" id="foodFib" placeholder="Ίνες (g)" min="0" step="0.1">
         <button type="submit" class="btn primary">Αποθήκευση τροφίμου</button>
       </form>
     </div>
@@ -182,7 +242,7 @@
       <div class="table-scroll">
         <table class="foods-table" id="foodsTable">
           <thead>
-            <tr><th>Όνομα</th><th>Μερίδα</th><th>Kcal</th><th>P</th><th>C</th><th>F</th><th></th></tr>
+            <tr><th>Όνομα</th><th>Μερίδα</th><th>Kcal</th><th>P</th><th>C</th><th>F</th><th>Ίνες</th><th></th></tr>
           </thead>
           <tbody id="foodsTableBody">
           </tbody>
@@ -204,7 +264,7 @@
       <h2>Σύνοψη ανά ημέρα</h2>
       <div class="table-scroll">
         <table class="history-table">
-          <thead><tr><th>Ημερομηνία</th><th>Θερμίδες</th><th>Πρωτεΐνη</th><th>Υδατ.</th><th>Λίπος</th></tr></thead>
+          <thead><tr><th>Ημερομηνία</th><th>Θερμίδες</th><th>Πρωτεΐνη</th><th>Υδατ.</th><th>Λίπος</th><th>Ίνες</th></tr></thead>
           <tbody id="historyTableBody"></tbody>
         </table>
       </div>
@@ -247,6 +307,9 @@
         <label>Λίπος (g)
           <input type="number" id="goalFat" min="0" step="1" required>
         </label>
+        <label>Ίνες (g)
+          <input type="number" id="goalFib" min="0" step="1">
+        </label>
         <button type="button" id="calcCaloriesBtn" class="btn secondary">Υπολογισμός θερμίδων από μακροθρεπτικά</button>
         <button type="submit" class="btn primary">Αποθήκευση στόχων</button>
       </form>
@@ -287,4 +350,3 @@
 <script src="js/app.js"></script>
 </body>
 </html>
-
