@@ -973,7 +973,116 @@ function getLastNDays(n) {
   return days;
 }
 
+/* ---------------- statistics ---------------- */
+
+let statsPeriodDays = 7;
+
+function computeStats(days) {
+  const dayList = getLastNDays(days);
+  const perDay = dayList.map(d => {
+    const entries = getEntriesFor(d);
+    return { date: d, hasEntries: entries.length > 0, totals: sumEntries(entries) };
+  });
+  const loggedDays = perDay.filter(d => d.hasEntries);
+  const n = loggedDays.length;
+
+  const avg = (key) => n > 0 ? loggedDays.reduce((sum, d) => sum + (d.totals[key] || 0), 0) / n : 0;
+  const avgCal = avg('cal'), avgPro = avg('pro'), avgCarb = avg('carb'), avgFat = avg('fat'), avgFib = avg('fib');
+
+  const calGoal = state.goals.cal || 0;
+  const withinCalGoal = calGoal > 0
+    ? loggedDays.filter(d => Math.abs(d.totals.cal - calGoal) <= calGoal * 0.1).length
+    : 0;
+
+  // Supplement adherence over the period — counted only from each
+  // supplement's own createdAt date onward, so a recently-added supplement
+  // doesn't drag the percentage down for days before it existed.
+  let taken = 0, possible = 0;
+  state.supplements.forEach(s => {
+    const relevantDays = s.createdAt ? dayList.filter(d => d >= s.createdAt) : dayList;
+    possible += relevantDays.length;
+    relevantDays.forEach(d => {
+      if (getSupplementLogFor(d).includes(s.name)) taken++;
+    });
+  });
+  const adherencePct = possible > 0 ? Math.round((taken / possible) * 100) : null;
+
+  return { n, avgCal, avgPro, avgCarb, avgFat, avgFib, calGoal, withinCalGoal, adherencePct, taken, possible };
+}
+
+function statDeltaNote(value, goal) {
+  if (!goal) return '';
+  const diff = value - goal;
+  const pct = Math.round((diff / goal) * 100);
+  if (Math.abs(pct) < 3) return { text: 'στον στόχο', over: false };
+  return { text: (diff > 0 ? `+${pct}% πάνω από στόχο` : `${pct}% κάτω από στόχο`), over: diff > 0 };
+}
+
+function renderStats(days) {
+  const grid = document.getElementById('statsGrid');
+  const hint = document.getElementById('statsHint');
+  const stats = computeStats(days);
+
+  if (stats.n === 0) {
+    grid.innerHTML = '';
+    hint.textContent = `Δεν έχεις καταχωρήσει γεύματα τις τελευταίες ${days} ημέρες.`;
+    hint.hidden = false;
+    return;
+  }
+  hint.hidden = true;
+
+  const goals = state.goals;
+  const macroTiles = [
+    { label: 'Μ.Ο. Θερμίδων', value: Math.round(stats.avgCal), goal: Math.round(goals.cal || 0), unit: 'kcal' },
+    { label: 'Μ.Ο. Πρωτεΐνης', value: round1(stats.avgPro), goal: round1(goals.pro || 0), unit: 'g' },
+    { label: 'Μ.Ο. Υδατανθράκων', value: round1(stats.avgCarb), goal: round1(goals.carb || 0), unit: 'g' },
+    { label: 'Μ.Ο. Λίπους', value: round1(stats.avgFat), goal: round1(goals.fat || 0), unit: 'g' },
+    { label: 'Μ.Ο. Ινών', value: round1(stats.avgFib), goal: round1(goals.fib || 0), unit: 'g' },
+  ];
+
+  let html = macroTiles.map(t => {
+    const note = statDeltaNote(t.value, t.goal);
+    const noteHtml = note ? `<div class="stat-tile-sub${note.over ? ' over' : ''}">${note.text}</div>` : '';
+    return `
+      <div class="stat-tile">
+        <div class="stat-tile-label">${t.label}</div>
+        <div class="stat-tile-value">${t.value}<span>/${t.goal}${t.unit}</span></div>
+        ${noteHtml}
+      </div>
+    `;
+  }).join('');
+
+  html += `
+    <div class="stat-tile wide">
+      <div class="stat-tile-label">Ημέρες εντός θερμιδικού στόχου (±10%)</div>
+      <div class="stat-tile-value">${stats.withinCalGoal}<span>/${stats.n} ημέρες με καταχωρήσεις</span></div>
+    </div>
+  `;
+
+  if (stats.adherencePct !== null) {
+    html += `
+      <div class="stat-tile wide">
+        <div class="stat-tile-label">Προσήλωση συμπληρωμάτων</div>
+        <div class="stat-tile-value">${stats.adherencePct}<span>% (${stats.taken}/${stats.possible} λήψεις)</span></div>
+      </div>
+    `;
+  }
+
+  grid.innerHTML = html;
+}
+
+function initStatsView() {
+  document.getElementById('statsPeriodToggle').addEventListener('click', (e) => {
+    const btn = e.target.closest('.period-btn');
+    if (!btn) return;
+    statsPeriodDays = parseInt(btn.dataset.days, 10) || 7;
+    document.querySelectorAll('#statsPeriodToggle .period-btn').forEach(b => b.classList.toggle('active', b === btn));
+    renderStats(statsPeriodDays);
+  });
+}
+
 function renderHistory() {
+  renderStats(statsPeriodDays);
   const days = getLastNDays(14);
   const totalsPerDay = days.map(d => sumEntries(getEntriesFor(d)));
 
@@ -1190,9 +1299,11 @@ function init() {
   initFoodsView();
   initGoalsView();
   initCloudSyncView();
+  initStatsView();
   renderDay();
   renderFoods();
   renderSupplementManageList();
 }
 
 document.addEventListener('DOMContentLoaded', init);
+
