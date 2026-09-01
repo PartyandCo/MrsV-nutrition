@@ -12,17 +12,20 @@ const APP_SHARED_SECRET = '';
 const STORAGE_KEYS = {
   goals: 'nutri.goals',
   foods: 'nutri.foods',
-  entries: 'nutri.entries', // { 'YYYY-MM-DD': [ {id, name, cal, pro, carb, fat} ] }
+  entries: 'nutri.entries', // { 'YYYY-MM-DD': [ {id, name, cal, pro, carb, fat, fib} ] }
   supplements: 'nutri.supplements', // [ {id, name, notes} ]
   supplementLog: 'nutri.supplementLog', // { 'YYYY-MM-DD': [ name, name, ... ] }
   cloudPin: 'nutri.cloudPin', // plain string, not JSON — device-local, not synced
   cloudLastSync: 'nutri.cloudLastSync', // ISO timestamp string
 };
 
-const DEFAULT_GOALS = { cal: 2000, pro: 120, carb: 220, fat: 65 };
+const DEFAULT_GOALS = { cal: 2000, pro: 120, carb: 220, fat: 65, fib: 25 };
 
 let state = {
-  goals: loadJSON(STORAGE_KEYS.goals, DEFAULT_GOALS),
+  // { ...DEFAULT_GOALS, ...saved } so an older saved goals object (from
+  // before the Fiber goal existed) still gets a sensible fib default
+  // instead of ending up undefined.
+  goals: { ...DEFAULT_GOALS, ...loadJSON(STORAGE_KEYS.goals, DEFAULT_GOALS) },
   foods: loadJSON(STORAGE_KEYS.foods, []),
   entries: loadJSON(STORAGE_KEYS.entries, {}),
   supplements: loadJSON(STORAGE_KEYS.supplements, []),
@@ -285,8 +288,9 @@ function sumEntries(list) {
     acc.pro += Number(e.pro) || 0;
     acc.carb += Number(e.carb) || 0;
     acc.fat += Number(e.fat) || 0;
+    acc.fib += Number(e.fib) || 0;
     return acc;
-  }, { cal: 0, pro: 0, carb: 0, fat: 0 });
+  }, { cal: 0, pro: 0, carb: 0, fat: 0, fib: 0 });
 }
 
 /* ---------------- supplements ---------------- */
@@ -470,6 +474,7 @@ function initDayView() {
       pro: round1(food.pro * qty),
       carb: round1(food.carb * qty),
       fat: round1(food.fat * qty),
+      fib: round1((food.fib || 0) * qty),
     });
     qtyInput.value = 1;
     select.value = '';
@@ -484,8 +489,9 @@ function initDayView() {
     const pro = parseFloat(document.getElementById('manualPro').value) || 0;
     const carb = parseFloat(document.getElementById('manualCarb').value) || 0;
     const fat = parseFloat(document.getElementById('manualFat').value) || 0;
+    const fib = parseFloat(document.getElementById('manualFib').value) || 0;
     if (!name) return;
-    addEntry(state.currentDate, { name, cal, pro, carb, fat });
+    addEntry(state.currentDate, { name, cal, pro, carb, fat, fib });
     e.target.reset();
     renderDay();
     showToast('Προστέθηκε στο ημερολόγιο.');
@@ -525,6 +531,7 @@ function showAIResult(data) {
   document.getElementById('aiResultPro').value = round1(total.protein_g || 0);
   document.getElementById('aiResultCarb').value = round1(total.carbs_g || 0);
   document.getElementById('aiResultFat').value = round1(total.fat_g || 0);
+  document.getElementById('aiResultFib').value = round1(total.fiber_g || 0);
 
   const noteEl = document.getElementById('aiResultNote');
   if (data.confidence_note) {
@@ -601,8 +608,9 @@ function initAIView() {
     const pro = parseFloat(document.getElementById('aiResultPro').value) || 0;
     const carb = parseFloat(document.getElementById('aiResultCarb').value) || 0;
     const fat = parseFloat(document.getElementById('aiResultFat').value) || 0;
+    const fib = parseFloat(document.getElementById('aiResultFib').value) || 0;
 
-    addEntry(state.currentDate, { name, cal, pro, carb, fat });
+    addEntry(state.currentDate, { name, cal, pro, carb, fat, fib });
     hideAIResult();
     document.getElementById('aiForm').reset();
     renderDay();
@@ -611,6 +619,278 @@ function initAIView() {
 
   document.getElementById('aiDiscardBtn').addEventListener('click', () => {
     hideAIResult();
+  });
+}
+
+/* ---------------- LABEL / BARCODE SCAN ---------------- */
+
+// Holds the per-100g nutrition values for whatever was last scanned, so the
+// "Υπολόγισε" button can turn "πόσα γραμμάρια έφαγες" into actual totals.
+let currentScanPer100 = null;
+
+const NO_BACKEND_MESSAGE = 'Αυτή η λειτουργία χρειάζεται το πραγματικό site σου στο Netlify (με ρυθμισμένο API key) — δεν είναι διαθέσιμη σε αυτή την προεπισκόπηση. Δοκίμασέ το μετά το deploy.';
+
+function scanHeaders() {
+  const headers = { 'Content-Type': 'application/json' };
+  if (APP_SHARED_SECRET) headers['x-app-secret'] = APP_SHARED_SECRET;
+  return headers;
+}
+
+function setScanLoading(isLoading) {
+  document.getElementById('scanLoading').hidden = !isLoading;
+}
+
+function showScanError(message) {
+  const el = document.getElementById('scanError');
+  el.textContent = message;
+  el.hidden = false;
+}
+
+function hideScanError() {
+  document.getElementById('scanError').hidden = true;
+}
+
+function hideScanResult() {
+  document.getElementById('scanResult').hidden = true;
+  document.getElementById('scanComputedFields').hidden = true;
+  currentScanPer100 = null;
+}
+
+// Resizes an image file client-side (long side capped at maxDim) before it
+// gets base64-encoded and sent to the server — phone photos are often
+// several MB, and this keeps the upload small and fast.
+function resizeImageToBase64(file, maxDim = 1024, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve({ base64: dataUrl.split(',')[1], mediaType: 'image/jpeg' });
+      };
+      img.onerror = () => reject(new Error('Δεν ήταν δυνατή η ανάγνωση της εικόνας.'));
+      img.src = reader.result;
+    };
+    reader.onerror = () => reject(new Error('Δεν ήταν δυνατή η ανάγνωση του αρχείου.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function hasUsableNutrition(per100) {
+  if (!per100) return false;
+  return !!(per100.calories || per100.protein_g || per100.carbs_g || per100.fat_g);
+}
+
+function showScanResult(result) {
+  currentScanPer100 = result.per_100g || { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 };
+  const p = currentScanPer100;
+
+  document.getElementById('scanResultName').value = result.product_name_guess || 'Προϊόν';
+  document.getElementById('scanPer100Note').textContent =
+    `Ανά 100γρ: ${Math.round(p.calories || 0)} kcal · P ${round1(p.protein_g || 0)}g · C ${round1(p.carbs_g || 0)}g · F ${round1(p.fat_g || 0)}g · Ίνες ${round1(p.fiber_g || 0)}g`;
+
+  const ingredientsEl = document.getElementById('scanIngredientsNote');
+  if (result.ingredients_summary) {
+    ingredientsEl.textContent = 'Συστατικά: ' + result.ingredients_summary;
+    ingredientsEl.hidden = false;
+  } else {
+    ingredientsEl.hidden = true;
+  }
+
+  document.getElementById('scanGrams').value = '';
+  document.getElementById('scanComputedFields').hidden = true;
+  document.getElementById('scanResult').hidden = false;
+}
+
+async function runScanPhoto(file) {
+  hideScanError();
+  hideScanResult();
+  setScanLoading(true);
+  try {
+    const { base64, mediaType } = await resizeImageToBase64(file);
+    const res = await fetch(AI_ENDPOINT, {
+      method: 'POST',
+      headers: scanHeaders(),
+      body: JSON.stringify({ mode: 'photo', image: base64, mediaType }),
+    });
+
+    if (res.status === 404 || res.status === 501) {
+      showScanError(NO_BACKEND_MESSAGE);
+      return;
+    }
+
+    let payload;
+    try {
+      payload = await res.json();
+    } catch {
+      showScanError(NO_BACKEND_MESSAGE);
+      return;
+    }
+
+    if (!res.ok || payload.error) {
+      showScanError(payload.error || `Σφάλμα (${res.status}).`);
+      return;
+    }
+
+    let result = payload.result || {};
+
+    if (!hasUsableNutrition(result.per_100g) && result.barcode_digits) {
+      const bcRes = await fetch(AI_ENDPOINT, {
+        method: 'POST',
+        headers: scanHeaders(),
+        body: JSON.stringify({ mode: 'barcode', code: result.barcode_digits }),
+      });
+      const bcPayload = await bcRes.json().catch(() => null);
+      if (bcPayload && bcPayload.result && bcPayload.result.found) {
+        result.per_100g = bcPayload.result.per_100g;
+        if (!result.product_name_guess) result.product_name_guess = bcPayload.result.product_name_guess;
+        if (!result.ingredients_summary) result.ingredients_summary = bcPayload.result.ingredients_summary;
+      } else {
+        showScanError('Διάβασα τον barcode, αλλά δεν βρήκα το προϊόν στη βάση δεδομένων. Δοκίμασε φωτογραφία της ετικέτας διατροφικών στοιχείων, ή καταχώρησέ το χειροκίνητα.');
+        return;
+      }
+    }
+
+    if (!hasUsableNutrition(result.per_100g)) {
+      showScanError('Δεν κατάφερα να διαβάσω διατροφικά στοιχεία από τη φωτογραφία. Δοκίμασε πιο καθαρή/κοντινή φωτογραφία της ετικέτας.');
+      return;
+    }
+
+    showScanResult(result);
+  } catch (err) {
+    showScanError('Αποτυχία σύνδεσης. Αν βλέπεις αυτή τη σελίδα ως προεπισκόπηση (όχι στο πραγματικό Netlify site), αυτό είναι αναμενόμενο — δοκίμασέ το μετά το deploy.');
+  } finally {
+    setScanLoading(false);
+  }
+}
+
+async function runScanBarcode(code) {
+  hideScanError();
+  hideScanResult();
+  setScanLoading(true);
+  try {
+    const res = await fetch(AI_ENDPOINT, {
+      method: 'POST',
+      headers: scanHeaders(),
+      body: JSON.stringify({ mode: 'barcode', code }),
+    });
+
+    if (res.status === 404 || res.status === 501) {
+      showScanError(NO_BACKEND_MESSAGE);
+      return;
+    }
+
+    let payload;
+    try {
+      payload = await res.json();
+    } catch {
+      showScanError(NO_BACKEND_MESSAGE);
+      return;
+    }
+
+    if (!res.ok || payload.error) {
+      showScanError(payload.error || `Σφάλμα (${res.status}).`);
+      return;
+    }
+
+    if (!payload.result || !payload.result.found) {
+      showScanError('Δεν βρέθηκε προϊόν με αυτόν τον κωδικό barcode. Δοκίμασε φωτογραφία της ετικέτας διατροφικών στοιχείων αντ\' αυτού.');
+      return;
+    }
+
+    showScanResult(payload.result);
+  } catch (err) {
+    showScanError('Αποτυχία σύνδεσης. Αν βλέπεις αυτή τη σελίδα ως προεπισκόπηση (όχι στο πραγματικό Netlify site), αυτό είναι αναμενόμενο — δοκίμασέ το μετά το deploy.');
+  } finally {
+    setScanLoading(false);
+  }
+}
+
+function initScanView() {
+  const photoInput = document.getElementById('scanPhotoInput');
+  photoInput.addEventListener('change', () => {
+    const file = photoInput.files[0];
+    photoInput.value = '';
+    if (!file) return;
+    runScanPhoto(file);
+  });
+
+  document.getElementById('scanBarcodeForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = document.getElementById('scanBarcodeInput');
+    const code = input.value.trim();
+    if (!code) return;
+    runScanBarcode(code);
+  });
+
+  document.getElementById('scanCalcBtn').addEventListener('click', () => {
+    if (!currentScanPer100) return;
+    const grams = parseFloat(document.getElementById('scanGrams').value) || 0;
+    const factor = grams / 100;
+    const p = currentScanPer100;
+    document.getElementById('scanCal').value = Math.round((p.calories || 0) * factor);
+    document.getElementById('scanPro').value = round1((p.protein_g || 0) * factor);
+    document.getElementById('scanCarb').value = round1((p.carbs_g || 0) * factor);
+    document.getElementById('scanFat').value = round1((p.fat_g || 0) * factor);
+    document.getElementById('scanFib').value = round1((p.fiber_g || 0) * factor);
+    document.getElementById('scanComputedFields').hidden = false;
+  });
+
+  document.getElementById('scanConfirmBtn').addEventListener('click', () => {
+    if (document.getElementById('scanComputedFields').hidden) {
+      showToast('Πάτα πρώτα «Υπολόγισε» αφού βάλεις τα γραμμάρια.');
+      return;
+    }
+    const name = document.getElementById('scanResultName').value.trim() || 'Σκαναρισμένο τρόφιμο';
+    const cal = parseFloat(document.getElementById('scanCal').value) || 0;
+    const pro = parseFloat(document.getElementById('scanPro').value) || 0;
+    const carb = parseFloat(document.getElementById('scanCarb').value) || 0;
+    const fat = parseFloat(document.getElementById('scanFat').value) || 0;
+    const fib = parseFloat(document.getElementById('scanFib').value) || 0;
+
+    addEntry(state.currentDate, { name, cal, pro, carb, fat, fib });
+    hideScanResult();
+    document.getElementById('scanBarcodeForm').reset();
+    renderDay();
+    showToast('Προστέθηκε στο ημερολόγιο.');
+  });
+
+  document.getElementById('scanFavoriteBtn').addEventListener('click', () => {
+    if (!currentScanPer100) return;
+    const name = document.getElementById('scanResultName').value.trim() || 'Σκαναρισμένο τρόφιμο';
+    const p = currentScanPer100;
+    state.foods.push({
+      id: uid(),
+      name,
+      serving: '100g',
+      cal: round1(p.calories || 0),
+      pro: round1(p.protein_g || 0),
+      carb: round1(p.carbs_g || 0),
+      fat: round1(p.fat_g || 0),
+      fib: round1(p.fiber_g || 0),
+    });
+    saveJSON(STORAGE_KEYS.foods, state.foods);
+    renderFoods();
+    renderQuickAddOptions();
+    showToast('Προστέθηκε στα αγαπημένα (τιμές ανά 100γρ) — χρησιμοποίησε τις «μερίδες» στη γρήγορη προσθήκη για να πολλαπλασιάσεις.');
+  });
+
+  document.getElementById('scanDiscardBtn').addEventListener('click', () => {
+    hideScanResult();
   });
 }
 
@@ -637,11 +917,14 @@ function renderDay() {
   document.getElementById('carbGoal').textContent = goals.carb;
   document.getElementById('fatSum').textContent = round1(totals.fat);
   document.getElementById('fatGoal').textContent = goals.fat;
+  document.getElementById('fibSum').textContent = round1(totals.fib);
+  document.getElementById('fibGoal').textContent = goals.fib;
 
   setBar('calBar', totals.cal, goals.cal);
   setBar('proBar', totals.pro, goals.pro);
   setBar('carbBar', totals.carb, goals.carb);
   setBar('fatBar', totals.fat, goals.fat);
+  setBar('fibBar', totals.fib, goals.fib);
 
   const remaining = goals.cal - totals.cal;
   const remainEl = document.getElementById('calRemaining');
@@ -659,7 +942,7 @@ function renderDay() {
       <li>
         <div class="entry-main">
           <span class="entry-name">${escapeHtml(e.name)}</span>
-          <span class="entry-macros">P ${round1(e.pro)}g · C ${round1(e.carb)}g · F ${round1(e.fat)}g</span>
+          <span class="entry-macros">P ${round1(e.pro)}g · C ${round1(e.carb)}g · F ${round1(e.fat)}g · Ίνες ${round1(e.fib || 0)}g</span>
         </div>
         <div class="entry-actions">
           <span class="entry-cal">${Math.round(e.cal)} kcal</span>
@@ -701,8 +984,9 @@ function initFoodsView() {
     const pro = parseFloat(document.getElementById('foodPro').value) || 0;
     const carb = parseFloat(document.getElementById('foodCarb').value) || 0;
     const fat = parseFloat(document.getElementById('foodFat').value) || 0;
+    const fib = parseFloat(document.getElementById('foodFib').value) || 0;
     if (!name) return;
-    state.foods.push({ id: uid(), name, serving, cal, pro, carb, fat });
+    state.foods.push({ id: uid(), name, serving, cal, pro, carb, fat, fib });
     saveJSON(STORAGE_KEYS.foods, state.foods);
     e.target.reset();
     renderFoods();
@@ -737,6 +1021,7 @@ function renderFoods() {
       <td>${round1(f.pro)}</td>
       <td>${round1(f.carb)}</td>
       <td>${round1(f.fat)}</td>
+      <td>${round1(f.fib || 0)}</td>
       <td><button class="delete-btn" data-id="${f.id}" title="Διαγραφή">✕</button></td>
     </tr>
   `).join('');
@@ -806,6 +1091,7 @@ function renderHistory() {
       <td>${round1(t.pro)}g</td>
       <td>${round1(t.carb)}g</td>
       <td>${round1(t.fat)}g</td>
+      <td>${round1(t.fib || 0)}g</td>
     </tr>`;
   }).join('');
 
@@ -868,6 +1154,7 @@ function initGoalsView() {
   document.getElementById('goalPro').value = state.goals.pro;
   document.getElementById('goalCarb').value = state.goals.carb;
   document.getElementById('goalFat').value = state.goals.fat;
+  document.getElementById('goalFib').value = state.goals.fib;
 
   document.getElementById('goalsForm').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -876,6 +1163,7 @@ function initGoalsView() {
       pro: parseFloat(document.getElementById('goalPro').value) || 0,
       carb: parseFloat(document.getElementById('goalCarb').value) || 0,
       fat: parseFloat(document.getElementById('goalFat').value) || 0,
+      fib: parseFloat(document.getElementById('goalFib').value) || 0,
     };
     saveJSON(STORAGE_KEYS.goals, state.goals);
     renderDay();
@@ -962,6 +1250,7 @@ function init() {
   initTabs();
   initDayView();
   initAIView();
+  initScanView();
   initSupplementsView();
   initFoodsView();
   initGoalsView();
@@ -972,4 +1261,3 @@ function init() {
 }
 
 document.addEventListener('DOMContentLoaded', init);
-
