@@ -505,9 +505,28 @@ function initDayView() {
   });
 }
 
-/* ---------------- AI FREE-TEXT ENTRY ---------------- */
+/* ---------------- AI ENTRY: TEXT, PHOTO LABEL/BARCODE, OR TYPED BARCODE ----------------
+   One shared card/result panel handles all three ways of logging a meal:
+   free-text description, a photo of a nutrition label or barcode, or a
+   typed barcode number. The photo/barcode paths land on an intermediate
+   "πόσα γραμμάρια έφαγες" step (since they give per-100g values, not a
+   ready total); free text goes straight to the shared result fields. */
 
 const AI_ENDPOINT = '/api/estimate-nutrition';
+const NO_BACKEND_MESSAGE = 'Αυτή η λειτουργία χρειάζεται το πραγματικό site σου στο Netlify (με ρυθμισμένο API key) — δεν είναι διαθέσιμη σε αυτή την προεπισκόπηση. Δοκίμασέ το μετά το deploy.';
+
+// Set only when the current result came from a photo/barcode scan — holds
+// the raw per-100g values + name so "Υπολόγισε ποσότητα" can scale them by
+// grams, and "Πρόσθεσε στα αγαπημένα" can save the un-scaled per-100g
+// reference rather than whatever ends up in the (possibly edited) result
+// fields. null while showing a free-text AI result, or when nothing's shown.
+let currentScanResult = null;
+
+function aiHeaders() {
+  const headers = { 'Content-Type': 'application/json' };
+  if (APP_SHARED_SECRET) headers['x-app-secret'] = APP_SHARED_SECRET;
+  return headers;
+}
 
 function setAILoading(isLoading) {
   document.getElementById('aiLoading').hidden = !isLoading;
@@ -524,136 +543,69 @@ function hideAIError() {
   document.getElementById('aiError').hidden = true;
 }
 
-function showAIResult(data) {
-  const total = data.total || {};
-  document.getElementById('aiResultName').value = data.summary_name || 'Γεύμα';
-  document.getElementById('aiResultCal').value = Math.round(total.calories || 0);
-  document.getElementById('aiResultPro').value = round1(total.protein_g || 0);
-  document.getElementById('aiResultCarb').value = round1(total.carbs_g || 0);
-  document.getElementById('aiResultFat').value = round1(total.fat_g || 0);
-  document.getElementById('aiResultFib').value = round1(total.fiber_g || 0);
+function hideGramsStep() {
+  document.getElementById('scanGramsStep').hidden = true;
+}
+
+function hideAIResult() {
+  document.getElementById('aiResult').hidden = true;
+  hideGramsStep();
+  currentScanResult = null;
+}
+
+// Shows the "πόσα γραμμάρια έφαγες" step for a photo/barcode scan result
+// (per-100g values), before it becomes an editable total.
+function showGramsStep(result) {
+  document.getElementById('aiResult').hidden = true;
+  currentScanResult = {
+    per_100g: result.per_100g || { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 },
+    product_name_guess: result.product_name_guess || 'Προϊόν',
+  };
+  const p = currentScanResult.per_100g;
+
+  document.getElementById('scanPer100Note').textContent =
+    `${currentScanResult.product_name_guess} — ανά 100γρ: ${Math.round(p.calories || 0)} kcal · P ${round1(p.protein_g || 0)}g · C ${round1(p.carbs_g || 0)}g · F ${round1(p.fat_g || 0)}g · Ίνες ${round1(p.fiber_g || 0)}g`;
+
+  const ingredientsEl = document.getElementById('scanIngredientsNote');
+  if (result.ingredients_summary) {
+    ingredientsEl.textContent = 'Συστατικά: ' + result.ingredients_summary;
+    ingredientsEl.hidden = false;
+  } else {
+    ingredientsEl.hidden = true;
+  }
+
+  document.getElementById('scanGrams').value = '';
+  document.getElementById('scanGramsStep').hidden = false;
+}
+
+// Populates the one shared, editable result panel (used by all three entry
+// paths) and shows/hides the "add to favorites" button — that only makes
+// sense for a scan result (a reusable per-100g item), not a one-off
+// free-text meal estimate.
+function showAIResult({ name, cal, pro, carb, fat, fib, note }) {
+  document.getElementById('aiResultName').value = name || 'Γεύμα';
+  document.getElementById('aiResultCal').value = Math.round(cal || 0);
+  document.getElementById('aiResultPro').value = round1(pro || 0);
+  document.getElementById('aiResultCarb').value = round1(carb || 0);
+  document.getElementById('aiResultFat').value = round1(fat || 0);
+  document.getElementById('aiResultFib').value = round1(fib || 0);
 
   const noteEl = document.getElementById('aiResultNote');
-  if (data.confidence_note) {
-    noteEl.textContent = 'Σημείωση AI: ' + data.confidence_note;
+  if (note) {
+    noteEl.textContent = note;
     noteEl.hidden = false;
   } else {
     noteEl.hidden = true;
   }
 
+  document.getElementById('aiFavoriteBtn').hidden = !currentScanResult;
+  hideGramsStep();
   document.getElementById('aiResult').hidden = false;
 }
 
-function hideAIResult() {
-  document.getElementById('aiResult').hidden = true;
-}
-
-function initAIView() {
-  document.getElementById('aiForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const description = document.getElementById('aiDescription').value.trim();
-    if (!description) return;
-
-    hideAIError();
-    hideAIResult();
-    setAILoading(true);
-
-    try {
-      const headers = { 'Content-Type': 'application/json' };
-      if (APP_SHARED_SECRET) headers['x-app-secret'] = APP_SHARED_SECRET;
-
-      const res = await fetch(AI_ENDPOINT, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ description }),
-      });
-
-      const NO_BACKEND_MESSAGE = 'Αυτή η λειτουργία χρειάζεται το πραγματικό site σου στο Netlify (με ρυθμισμένο API key) — δεν είναι διαθέσιμη σε αυτή την προεπισκόπηση. Δοκίμασέ το μετά το deploy.';
-
-      if (res.status === 404 || res.status === 501) {
-        // No backend at this address — normal when running this page as a
-        // plain static preview instead of the deployed Netlify site with the
-        // serverless function + API key configured.
-        showAIError(NO_BACKEND_MESSAGE);
-        return;
-      }
-
-      let payload;
-      try {
-        payload = await res.json();
-      } catch {
-        // A non-JSON response body (an HTML error page, etc.) almost always
-        // means there's no real function at this address rather than a
-        // malformed reply from a genuine backend.
-        showAIError(NO_BACKEND_MESSAGE);
-        return;
-      }
-
-      if (!res.ok || payload.error) {
-        showAIError(payload.error || `Σφάλμα (${res.status}).`);
-        return;
-      }
-
-      showAIResult(payload.result);
-    } catch (err) {
-      showAIError('Αποτυχία σύνδεσης. Αν βλέπεις αυτή τη σελίδα ως προεπισκόπηση (όχι στο πραγματικό Netlify site), αυτό είναι αναμενόμενο — δοκίμασέ το μετά το deploy.');
-    } finally {
-      setAILoading(false);
-    }
-  });
-
-  document.getElementById('aiConfirmBtn').addEventListener('click', () => {
-    const name = document.getElementById('aiResultName').value.trim() || 'Γεύμα';
-    const cal = parseFloat(document.getElementById('aiResultCal').value) || 0;
-    const pro = parseFloat(document.getElementById('aiResultPro').value) || 0;
-    const carb = parseFloat(document.getElementById('aiResultCarb').value) || 0;
-    const fat = parseFloat(document.getElementById('aiResultFat').value) || 0;
-    const fib = parseFloat(document.getElementById('aiResultFib').value) || 0;
-
-    addEntry(state.currentDate, { name, cal, pro, carb, fat, fib });
-    hideAIResult();
-    document.getElementById('aiForm').reset();
-    renderDay();
-    showToast('Προστέθηκε στο ημερολόγιο.');
-  });
-
-  document.getElementById('aiDiscardBtn').addEventListener('click', () => {
-    hideAIResult();
-  });
-}
-
-/* ---------------- LABEL / BARCODE SCAN ---------------- */
-
-// Holds the per-100g nutrition values for whatever was last scanned, so the
-// "Υπολόγισε" button can turn "πόσα γραμμάρια έφαγες" into actual totals.
-let currentScanPer100 = null;
-
-const NO_BACKEND_MESSAGE = 'Αυτή η λειτουργία χρειάζεται το πραγματικό site σου στο Netlify (με ρυθμισμένο API key) — δεν είναι διαθέσιμη σε αυτή την προεπισκόπηση. Δοκίμασέ το μετά το deploy.';
-
-function scanHeaders() {
-  const headers = { 'Content-Type': 'application/json' };
-  if (APP_SHARED_SECRET) headers['x-app-secret'] = APP_SHARED_SECRET;
-  return headers;
-}
-
-function setScanLoading(isLoading) {
-  document.getElementById('scanLoading').hidden = !isLoading;
-}
-
-function showScanError(message) {
-  const el = document.getElementById('scanError');
-  el.textContent = message;
-  el.hidden = false;
-}
-
-function hideScanError() {
-  document.getElementById('scanError').hidden = true;
-}
-
-function hideScanResult() {
-  document.getElementById('scanResult').hidden = true;
-  document.getElementById('scanComputedFields').hidden = true;
-  currentScanPer100 = null;
+function hasUsableNutrition(per100) {
+  if (!per100) return false;
+  return !!(per100.calories || per100.protein_g || per100.carbs_g || per100.fat_g);
 }
 
 // Resizes an image file client-side (long side capped at maxDim) before it
@@ -690,137 +642,114 @@ function resizeImageToBase64(file, maxDim = 1024, quality = 0.82) {
   });
 }
 
-function hasUsableNutrition(per100) {
-  if (!per100) return false;
-  return !!(per100.calories || per100.protein_g || per100.carbs_g || per100.fat_g);
+async function postToAI(body) {
+  const res = await fetch(AI_ENDPOINT, { method: 'POST', headers: aiHeaders(), body: JSON.stringify(body) });
+  if (res.status === 404 || res.status === 501) {
+    // No backend at this address — normal when running this page as a plain
+    // static preview instead of the deployed Netlify site with the
+    // serverless function + API key configured.
+    return { error: NO_BACKEND_MESSAGE };
+  }
+  let payload;
+  try {
+    payload = await res.json();
+  } catch {
+    // A non-JSON response body (an HTML error page, etc.) almost always
+    // means there's no real function at this address.
+    return { error: NO_BACKEND_MESSAGE };
+  }
+  if (!res.ok || payload.error) {
+    return { error: payload.error || `Σφάλμα (${res.status}).` };
+  }
+  return { result: payload.result };
 }
 
-function showScanResult(result) {
-  currentScanPer100 = result.per_100g || { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 };
-  const p = currentScanPer100;
-
-  document.getElementById('scanResultName').value = result.product_name_guess || 'Προϊόν';
-  document.getElementById('scanPer100Note').textContent =
-    `Ανά 100γρ: ${Math.round(p.calories || 0)} kcal · P ${round1(p.protein_g || 0)}g · C ${round1(p.carbs_g || 0)}g · F ${round1(p.fat_g || 0)}g · Ίνες ${round1(p.fiber_g || 0)}g`;
-
-  const ingredientsEl = document.getElementById('scanIngredientsNote');
-  if (result.ingredients_summary) {
-    ingredientsEl.textContent = 'Συστατικά: ' + result.ingredients_summary;
-    ingredientsEl.hidden = false;
-  } else {
-    ingredientsEl.hidden = true;
+async function runAIText(description) {
+  hideAIError();
+  hideAIResult();
+  setAILoading(true);
+  try {
+    const { result, error } = await postToAI({ description });
+    if (error) { showAIError(error); return; }
+    const total = result.total || {};
+    showAIResult({
+      name: result.summary_name,
+      cal: total.calories, pro: total.protein_g, carb: total.carbs_g, fat: total.fat_g, fib: total.fiber_g,
+      note: result.confidence_note ? 'Σημείωση AI: ' + result.confidence_note : null,
+    });
+  } catch (err) {
+    showAIError('Αποτυχία σύνδεσης. Αν βλέπεις αυτή τη σελίδα ως προεπισκόπηση (όχι στο πραγματικό Netlify site), αυτό είναι αναμενόμενο — δοκίμασέ το μετά το deploy.');
+  } finally {
+    setAILoading(false);
   }
-
-  document.getElementById('scanGrams').value = '';
-  document.getElementById('scanComputedFields').hidden = true;
-  document.getElementById('scanResult').hidden = false;
 }
 
 async function runScanPhoto(file) {
-  hideScanError();
-  hideScanResult();
-  setScanLoading(true);
+  hideAIError();
+  hideAIResult();
+  setAILoading(true);
   try {
     const { base64, mediaType } = await resizeImageToBase64(file);
-    const res = await fetch(AI_ENDPOINT, {
-      method: 'POST',
-      headers: scanHeaders(),
-      body: JSON.stringify({ mode: 'photo', image: base64, mediaType }),
-    });
+    const { result, error } = await postToAI({ mode: 'photo', image: base64, mediaType });
+    if (error) { showAIError(error); return; }
 
-    if (res.status === 404 || res.status === 501) {
-      showScanError(NO_BACKEND_MESSAGE);
-      return;
-    }
+    let scanResult = result;
 
-    let payload;
-    try {
-      payload = await res.json();
-    } catch {
-      showScanError(NO_BACKEND_MESSAGE);
-      return;
-    }
-
-    if (!res.ok || payload.error) {
-      showScanError(payload.error || `Σφάλμα (${res.status}).`);
-      return;
-    }
-
-    let result = payload.result || {};
-
-    if (!hasUsableNutrition(result.per_100g) && result.barcode_digits) {
-      const bcRes = await fetch(AI_ENDPOINT, {
-        method: 'POST',
-        headers: scanHeaders(),
-        body: JSON.stringify({ mode: 'barcode', code: result.barcode_digits }),
-      });
-      const bcPayload = await bcRes.json().catch(() => null);
-      if (bcPayload && bcPayload.result && bcPayload.result.found) {
-        result.per_100g = bcPayload.result.per_100g;
-        if (!result.product_name_guess) result.product_name_guess = bcPayload.result.product_name_guess;
-        if (!result.ingredients_summary) result.ingredients_summary = bcPayload.result.ingredients_summary;
+    if (!hasUsableNutrition(scanResult.per_100g) && scanResult.barcode_digits) {
+      const bc = await postToAI({ mode: 'barcode', code: scanResult.barcode_digits });
+      if (bc.result && bc.result.found) {
+        scanResult = {
+          ...scanResult,
+          per_100g: bc.result.per_100g,
+          product_name_guess: scanResult.product_name_guess || bc.result.product_name_guess,
+          ingredients_summary: scanResult.ingredients_summary || bc.result.ingredients_summary,
+        };
       } else {
-        showScanError('Διάβασα τον barcode, αλλά δεν βρήκα το προϊόν στη βάση δεδομένων. Δοκίμασε φωτογραφία της ετικέτας διατροφικών στοιχείων, ή καταχώρησέ το χειροκίνητα.');
+        showAIError('Διάβασα τον barcode, αλλά δεν βρήκα το προϊόν στη βάση δεδομένων. Δοκίμασε φωτογραφία της ετικέτας διατροφικών στοιχείων, ή περιέγραψέ το με λόγια στο πάνω πεδίο.');
         return;
       }
     }
 
-    if (!hasUsableNutrition(result.per_100g)) {
-      showScanError('Δεν κατάφερα να διαβάσω διατροφικά στοιχεία από τη φωτογραφία. Δοκίμασε πιο καθαρή/κοντινή φωτογραφία της ετικέτας.');
+    if (!hasUsableNutrition(scanResult.per_100g)) {
+      showAIError('Δεν κατάφερα να διαβάσω διατροφικά στοιχεία από τη φωτογραφία. Δοκίμασε πιο καθαρή/κοντινή φωτογραφία της ετικέτας.');
       return;
     }
 
-    showScanResult(result);
+    showGramsStep(scanResult);
   } catch (err) {
-    showScanError('Αποτυχία σύνδεσης. Αν βλέπεις αυτή τη σελίδα ως προεπισκόπηση (όχι στο πραγματικό Netlify site), αυτό είναι αναμενόμενο — δοκίμασέ το μετά το deploy.');
+    showAIError('Αποτυχία σύνδεσης. Αν βλέπεις αυτή τη σελίδα ως προεπισκόπηση (όχι στο πραγματικό Netlify site), αυτό είναι αναμενόμενο — δοκίμασέ το μετά το deploy.');
   } finally {
-    setScanLoading(false);
+    setAILoading(false);
   }
 }
 
 async function runScanBarcode(code) {
-  hideScanError();
-  hideScanResult();
-  setScanLoading(true);
+  hideAIError();
+  hideAIResult();
+  setAILoading(true);
   try {
-    const res = await fetch(AI_ENDPOINT, {
-      method: 'POST',
-      headers: scanHeaders(),
-      body: JSON.stringify({ mode: 'barcode', code }),
-    });
-
-    if (res.status === 404 || res.status === 501) {
-      showScanError(NO_BACKEND_MESSAGE);
+    const { result, error } = await postToAI({ mode: 'barcode', code });
+    if (error) { showAIError(error); return; }
+    if (!result || !result.found) {
+      showAIError('Δεν βρέθηκε προϊόν με αυτόν τον κωδικό barcode. Δοκίμασε φωτογραφία της ετικέτας διατροφικών στοιχείων αντ\' αυτού.');
       return;
     }
-
-    let payload;
-    try {
-      payload = await res.json();
-    } catch {
-      showScanError(NO_BACKEND_MESSAGE);
-      return;
-    }
-
-    if (!res.ok || payload.error) {
-      showScanError(payload.error || `Σφάλμα (${res.status}).`);
-      return;
-    }
-
-    if (!payload.result || !payload.result.found) {
-      showScanError('Δεν βρέθηκε προϊόν με αυτόν τον κωδικό barcode. Δοκίμασε φωτογραφία της ετικέτας διατροφικών στοιχείων αντ\' αυτού.');
-      return;
-    }
-
-    showScanResult(payload.result);
+    showGramsStep(result);
   } catch (err) {
-    showScanError('Αποτυχία σύνδεσης. Αν βλέπεις αυτή τη σελίδα ως προεπισκόπηση (όχι στο πραγματικό Netlify site), αυτό είναι αναμενόμενο — δοκίμασέ το μετά το deploy.');
+    showAIError('Αποτυχία σύνδεσης. Αν βλέπεις αυτή τη σελίδα ως προεπισκόπηση (όχι στο πραγματικό Netlify site), αυτό είναι αναμενόμενο — δοκίμασέ το μετά το deploy.');
   } finally {
-    setScanLoading(false);
+    setAILoading(false);
   }
 }
 
-function initScanView() {
+function initAIView() {
+  document.getElementById('aiForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const description = document.getElementById('aiDescription').value.trim();
+    if (!description) return;
+    runAIText(description);
+  });
+
   const photoInput = document.getElementById('scanPhotoInput');
   photoInput.addEventListener('change', () => {
     const file = photoInput.files[0];
@@ -831,48 +760,46 @@ function initScanView() {
 
   document.getElementById('scanBarcodeForm').addEventListener('submit', (e) => {
     e.preventDefault();
-    const input = document.getElementById('scanBarcodeInput');
-    const code = input.value.trim();
+    const code = document.getElementById('scanBarcodeInput').value.trim();
     if (!code) return;
     runScanBarcode(code);
   });
 
   document.getElementById('scanCalcBtn').addEventListener('click', () => {
-    if (!currentScanPer100) return;
+    if (!currentScanResult) return;
     const grams = parseFloat(document.getElementById('scanGrams').value) || 0;
     const factor = grams / 100;
-    const p = currentScanPer100;
-    document.getElementById('scanCal').value = Math.round((p.calories || 0) * factor);
-    document.getElementById('scanPro').value = round1((p.protein_g || 0) * factor);
-    document.getElementById('scanCarb').value = round1((p.carbs_g || 0) * factor);
-    document.getElementById('scanFat').value = round1((p.fat_g || 0) * factor);
-    document.getElementById('scanFib').value = round1((p.fiber_g || 0) * factor);
-    document.getElementById('scanComputedFields').hidden = false;
+    const p = currentScanResult.per_100g;
+    showAIResult({
+      name: currentScanResult.product_name_guess,
+      cal: (p.calories || 0) * factor,
+      pro: (p.protein_g || 0) * factor,
+      carb: (p.carbs_g || 0) * factor,
+      fat: (p.fat_g || 0) * factor,
+      fib: (p.fiber_g || 0) * factor,
+    });
   });
 
-  document.getElementById('scanConfirmBtn').addEventListener('click', () => {
-    if (document.getElementById('scanComputedFields').hidden) {
-      showToast('Πάτα πρώτα «Υπολόγισε» αφού βάλεις τα γραμμάρια.');
-      return;
-    }
-    const name = document.getElementById('scanResultName').value.trim() || 'Σκαναρισμένο τρόφιμο';
-    const cal = parseFloat(document.getElementById('scanCal').value) || 0;
-    const pro = parseFloat(document.getElementById('scanPro').value) || 0;
-    const carb = parseFloat(document.getElementById('scanCarb').value) || 0;
-    const fat = parseFloat(document.getElementById('scanFat').value) || 0;
-    const fib = parseFloat(document.getElementById('scanFib').value) || 0;
+  document.getElementById('aiConfirmBtn').addEventListener('click', () => {
+    const name = document.getElementById('aiResultName').value.trim() || 'Γεύμα';
+    const cal = parseFloat(document.getElementById('aiResultCal').value) || 0;
+    const pro = parseFloat(document.getElementById('aiResultPro').value) || 0;
+    const carb = parseFloat(document.getElementById('aiResultCarb').value) || 0;
+    const fat = parseFloat(document.getElementById('aiResultFat').value) || 0;
+    const fib = parseFloat(document.getElementById('aiResultFib').value) || 0;
 
     addEntry(state.currentDate, { name, cal, pro, carb, fat, fib });
-    hideScanResult();
+    hideAIResult();
+    document.getElementById('aiForm').reset();
     document.getElementById('scanBarcodeForm').reset();
     renderDay();
     showToast('Προστέθηκε στο ημερολόγιο.');
   });
 
-  document.getElementById('scanFavoriteBtn').addEventListener('click', () => {
-    if (!currentScanPer100) return;
-    const name = document.getElementById('scanResultName').value.trim() || 'Σκαναρισμένο τρόφιμο';
-    const p = currentScanPer100;
+  document.getElementById('aiFavoriteBtn').addEventListener('click', () => {
+    if (!currentScanResult) return;
+    const name = document.getElementById('aiResultName').value.trim() || 'Σκαναρισμένο τρόφιμο';
+    const p = currentScanResult.per_100g;
     state.foods.push({
       id: uid(),
       name,
@@ -889,8 +816,8 @@ function initScanView() {
     showToast('Προστέθηκε στα αγαπημένα (τιμές ανά 100γρ) — χρησιμοποίησε τις «μερίδες» στη γρήγορη προσθήκη για να πολλαπλασιάσεις.');
   });
 
-  document.getElementById('scanDiscardBtn').addEventListener('click', () => {
-    hideScanResult();
+  document.getElementById('aiDiscardBtn').addEventListener('click', () => {
+    hideAIResult();
   });
 }
 
@@ -1250,7 +1177,6 @@ function init() {
   initTabs();
   initDayView();
   initAIView();
-  initScanView();
   initSupplementsView();
   initFoodsView();
   initGoalsView();
@@ -1261,3 +1187,4 @@ function init() {
 }
 
 document.addEventListener('DOMContentLoaded', init);
+
