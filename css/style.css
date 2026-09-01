@@ -144,6 +144,7 @@ button, input, select, textarea { font-family: inherit; color: var(--ink); }
   margin: 0 0 12px 0;
   line-height: 1.5;
 }
+.hint-flush { margin: 0; }
 
 .or-divider {
   text-align: center;
@@ -287,7 +288,7 @@ button, input, select, textarea { font-family: inherit; color: var(--ink); }
 }
 .macro-value { font-size: 0.92rem; font-weight: 700; margin: 4px 0 7px 0; font-variant-numeric: tabular-nums; }
 
-.section-title-row { display: flex; align-items: center; justify-content: space-between; }
+.section-title-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 
 /* ---------------- forms / inputs ---------------- */
 
@@ -350,6 +351,34 @@ button, input, select, textarea { font-family: inherit; color: var(--ink); }
 .manual-entry[open] summary::before {
   transform: rotate(90deg);
 }
+
+/* Collapsible cards (History view) — the summary IS the card title, styled
+   like .card h2 but clickable, so a closed section is just a compact
+   title bar. */
+.collapsible summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.collapsible summary::-webkit-details-marker { display: none; }
+.collapsible summary::marker { content: ''; }
+.collapsible summary::before {
+  content: '▸';
+  display: inline-block;
+  font-size: 0.85em;
+  transition: transform 0.15s;
+}
+.collapsible[open] summary::before { transform: rotate(90deg); }
+.collapsible-body { margin-top: 12px; }
 
 .entry-form, .goals-form {
   display: grid;
@@ -718,4 +747,3 @@ button, input, select, textarea { font-family: inherit; color: var(--ink); }
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
-
